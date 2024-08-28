@@ -1,6 +1,7 @@
 import os
-import pathlib
 import io
+import pathlib
+import itertools
 
 import pytest
 
@@ -17,12 +18,27 @@ def manager() -> mnllib.MnLScriptManager:
 
 @pytest.mark.parametrize(
     "path",
-    pathlib.Path("data/data").rglob("mfset_*.dat"),
+    itertools.chain(
+        [
+            pathlib.Path(x)
+            for x in [
+                "data/data/BAI/BMes_cf.dat",
+                "data/data/BAI/BMes_ji.dat",
+                "data/data/BAI/BMes_yo.dat",
+                "data/data/MAI/MMes_yo.dat",
+                "data/data/SAI/SMes_yo.dat",
+            ]
+        ],
+        pathlib.Path("data/data").rglob("mfset_*.dat"),
+    ),
     ids=lambda path: path.as_posix(),
 )
-def test_mfset(path: pathlib.Path) -> None:
-    with path.open("rb") as orig_file:
-        orig_data = orig_file.read()
+def test_rebuild_language_table(path: pathlib.Path) -> None:
+    try:
+        with path.open("rb") as orig_file:
+            orig_data = orig_file.read()
+    except FileNotFoundError:
+        pytest.skip("file not present")
     language_table = mnllib.LanguageTable.from_bytes(orig_data, False)
     data = language_table.to_bytes()
     assert data == orig_data
