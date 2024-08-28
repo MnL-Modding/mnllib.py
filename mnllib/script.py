@@ -95,9 +95,9 @@ class ScriptHeader:
         if stream.tell() != section3_offset:
             warnings.warn(
                 f"There are extra bytes between the 2nd and 3rd section of the {
-                    f'header of script {index}'
+                    f"header of script {index}"
                     if index is not None
-                    else 'script header'
+                    else "script header"
                 }!",
                 MnLLibWarning,
             )
