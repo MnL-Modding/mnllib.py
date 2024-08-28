@@ -15,7 +15,7 @@ if typing.TYPE_CHECKING:
 
 
 class ScriptHeader:
-    index: int
+    index: int | None
 
     unk_0x00: bytes
     offsets_unk1: bytes
@@ -32,7 +32,7 @@ class ScriptHeader:
 
     def __init__(
         self,
-        index: int,
+        index: int | None = None,
         *,
         unk_0x00: bytes,
         offsets_unk1: bytes,
@@ -64,7 +64,10 @@ class ScriptHeader:
 
     @classmethod
     def from_stream(
-        cls, manager: MnLScriptManager, index: int, stream: typing.BinaryIO
+        cls,
+        manager: MnLScriptManager,
+        stream: typing.BinaryIO,
+        index: int | None = None,
     ) -> typing.Self:
         unk_0x00 = stream.read(12)
         section1_offset, section2_offset, section3_offset = struct.unpack(
@@ -91,8 +94,11 @@ class ScriptHeader:
 
         if stream.tell() != section3_offset:
             warnings.warn(
-                "There are extra bytes between the 2nd and 3rd section of "
-                f"the header of script {index}!",
+                f"There are extra bytes between the 2nd and 3rd section of the {
+                    f'header of script {index}'
+                    if index is not None
+                    else 'script header'
+                }!",
                 MnLLibWarning,
             )
             stream.seek(section3_offset)
@@ -348,12 +354,15 @@ class Subroutine:
 
 
 class Script(FEventChunk):
-    index: int
+    index: int | None
     header: ScriptHeader
     subroutines: list[Subroutine]
 
     def __init__(
-        self, index: int, header: ScriptHeader, subroutines: list[Subroutine]
+        self,
+        header: ScriptHeader,
+        subroutines: list[Subroutine],
+        index: int | None = None,
     ) -> None:
         self.index = index
         self.header = header
@@ -361,10 +370,10 @@ class Script(FEventChunk):
 
     @classmethod
     def from_bytes(
-        cls, manager: MnLScriptManager, index: int, data: bytes
+        cls, manager: MnLScriptManager, data: bytes, index: int | None = None
     ) -> typing.Self:
         data_io = io.BytesIO(data)
-        header = ScriptHeader.from_stream(manager, index, data_io)
+        header = ScriptHeader.from_stream(manager, data_io, index)
 
         subroutine_base_offset = data_io.tell()
         subroutines: list[Subroutine] = []
@@ -388,7 +397,7 @@ class Script(FEventChunk):
                 )
             )
 
-        return cls(index, header, subroutines)
+        return cls(header, subroutines, index)
 
     def to_bytes(self, manager: MnLScriptManager) -> bytes:
         subroutines_raw = io.BytesIO()

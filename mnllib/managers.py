@@ -90,12 +90,12 @@ class MnLScriptManager:
                     chunk_triple += (
                         parse_fevent_chunk(
                             self,
-                            index,
                             file.read(
                                 (flat_fevent_offset_table[index + 1] - offset)
                                 if index + 1 < len(flat_fevent_offset_table)
                                 else 0
                             ),
+                            index,
                         ),
                     )
                     index += 1

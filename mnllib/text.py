@@ -71,15 +71,19 @@ class TextTable:
 
 
 class LanguageTable(FEventChunk):
-    index: int
+    index: int | None
     text_tables: list[TextTable | bytes | None]
 
-    def __init__(self, index: int, text_tables: list[TextTable | bytes | None]) -> None:
+    def __init__(
+        self, text_tables: list[TextTable | bytes | None], index: int | None = None
+    ) -> None:
         self.index = index
         self.text_tables = text_tables
 
     @classmethod
-    def from_bytes(cls, index: int, data: bytes, is_dialog: bool) -> typing.Self:
+    def from_bytes(
+        cls, data: bytes, is_dialog: bool, index: int | None = None
+    ) -> typing.Self:
         data_io = io.BytesIO(data)
 
         language_table: list[int] = []
@@ -93,14 +97,16 @@ class LanguageTable(FEventChunk):
             ]
             if len(text_table_data) <= 0:
                 text_tables.append(None)
-            elif i >= 0x44 and i <= 0x48:
+            elif (not is_dialog and i != len(language_table) - 1) or (
+                is_dialog and i >= 0x44 and i <= 0x48
+            ):
                 text_tables.append(TextTable.from_bytes(text_table_data, is_dialog))
             else:
                 text_tables.append(text_table_data)
 
-        return cls(index, text_tables)
+        return cls(text_tables, index)
 
-    def to_bytes(self, manager: MnLScriptManager) -> bytes:
+    def to_bytes(self, manager: MnLScriptManager | None = None) -> bytes:
         text_table_offsets_raw = io.BytesIO()
         text_tables_raw = io.BytesIO()
 

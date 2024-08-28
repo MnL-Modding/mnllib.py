@@ -1,3 +1,4 @@
+import os
 import pathlib
 import io
 
@@ -6,23 +7,29 @@ import pytest
 import mnllib
 
 
-DATA_DIR = pathlib.Path(__file__).with_name("data")
-OVERLAY3_PATH = DATA_DIR / "overlay_0003.dec.bin"
-OVERLAY6_PATH = DATA_DIR / "overlay_0006.dec.bin"
-FEVENT_PATH = DATA_DIR / "FEvent.dat"
+os.chdir(pathlib.Path(__file__).parent)
 
 
 @pytest.fixture
 def manager() -> mnllib.MnLScriptManager:
-    manager = mnllib.MnLScriptManager(load=False)
-    manager.load_overlay3(OVERLAY3_PATH.as_posix())
-    manager.load_overlay6(OVERLAY6_PATH.as_posix())
-    manager.load_fevent(FEVENT_PATH.as_posix())
-    return manager
+    return mnllib.MnLScriptManager()
+
+
+@pytest.mark.parametrize(
+    "path",
+    pathlib.Path("data/data").rglob("mfset_*.dat"),
+    ids=lambda path: path.as_posix(),
+)
+def test_mfset(path: pathlib.Path) -> None:
+    with path.open("rb") as orig_file:
+        orig_data = orig_file.read()
+    language_table = mnllib.LanguageTable.from_bytes(orig_data, False)
+    data = language_table.to_bytes()
+    assert data == orig_data
 
 
 def test_rebuild_overlay3(manager: mnllib.MnLScriptManager) -> None:
-    with open(OVERLAY3_PATH, "rb") as orig_file:
+    with open("data/overlay.dec/overlay_0003.dec.bin", "rb") as orig_file:
         orig_data = orig_file.read()
     file = io.BytesIO(orig_data)
     manager.save_overlay3(file)
@@ -30,7 +37,7 @@ def test_rebuild_overlay3(manager: mnllib.MnLScriptManager) -> None:
 
 
 def test_rebuild_overlay6(manager: mnllib.MnLScriptManager) -> None:
-    with open(OVERLAY6_PATH, "rb") as orig_file:
+    with open("data/overlay.dec/overlay_0006.dec.bin", "rb") as orig_file:
         orig_data = orig_file.read()
     file = io.BytesIO(orig_data)
     manager.save_overlay6(file)
@@ -38,7 +45,7 @@ def test_rebuild_overlay6(manager: mnllib.MnLScriptManager) -> None:
 
 
 def test_rebuild_fevent(manager: mnllib.MnLScriptManager) -> None:
-    with open(FEVENT_PATH, "rb") as orig_file:
+    with open("data/data/FEvent/FEvent.dat", "rb") as orig_file:
         orig_data = orig_file.read()
     file = io.BytesIO()
     manager.save_fevent(file)
