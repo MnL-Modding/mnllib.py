@@ -3,5 +3,7 @@ max-line-length = 88
 require-plugins =
     flake8-pytest-style
 extend-ignore = E203,E701
+exclude =
+    data
 per-file-ignores =
     __init__.py: F401,F403,F405

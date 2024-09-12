@@ -12,8 +12,23 @@ os.chdir(pathlib.Path(__file__).parent)
 
 
 @pytest.fixture
-def manager() -> mnllib.MnLScriptManager:
-    return mnllib.MnLScriptManager()
+def fevent_manager() -> mnllib.FEventScriptManager:
+    return mnllib.FEventScriptManager()
+
+
+@pytest.fixture
+def battle_manager() -> mnllib.BattleScriptManager:
+    return mnllib.BattleScriptManager()
+
+
+@pytest.fixture
+def menu_manager() -> mnllib.MenuScriptManager:
+    return mnllib.MenuScriptManager()
+
+
+@pytest.fixture
+def shop_manager() -> mnllib.ShopScriptManager:
+    return mnllib.ShopScriptManager()
 
 
 @pytest.mark.parametrize(
@@ -33,7 +48,7 @@ def manager() -> mnllib.MnLScriptManager:
     ),
     ids=lambda path: path.as_posix(),
 )
-def test_rebuild_language_table(path: pathlib.Path) -> None:
+def test_rebuild_language_table_file(path: pathlib.Path) -> None:
     try:
         with path.open("rb") as orig_file:
             orig_data = orig_file.read()
@@ -44,25 +59,49 @@ def test_rebuild_language_table(path: pathlib.Path) -> None:
     assert data == orig_data
 
 
-def test_rebuild_overlay3(manager: mnllib.MnLScriptManager) -> None:
+def test_rebuild_overlay3(fevent_manager: mnllib.FEventScriptManager) -> None:
     with open("data/overlay.dec/overlay_0003.dec.bin", "rb") as orig_file:
         orig_data = orig_file.read()
     file = io.BytesIO(orig_data)
-    manager.save_overlay3(file)
+    fevent_manager.save_overlay3(file)
     assert file.getvalue() == orig_data
 
 
-def test_rebuild_overlay6(manager: mnllib.MnLScriptManager) -> None:
+def test_rebuild_overlay6(fevent_manager: mnllib.FEventScriptManager) -> None:
     with open("data/overlay.dec/overlay_0006.dec.bin", "rb") as orig_file:
         orig_data = orig_file.read()
     file = io.BytesIO(orig_data)
-    manager.save_overlay6(file)
+    fevent_manager.save_overlay6(file)
     assert file.getvalue() == orig_data
 
 
-def test_rebuild_fevent(manager: mnllib.MnLScriptManager) -> None:
+def test_rebuild_fevent(fevent_manager: mnllib.FEventScriptManager) -> None:
     with open("data/data/FEvent/FEvent.dat", "rb") as orig_file:
         orig_data = orig_file.read()
     file = io.BytesIO()
-    manager.save_fevent(file)
+    fevent_manager.save_fevent(file)
+    assert file.getvalue() == orig_data
+
+
+def test_rebuild_overlay12(battle_manager: mnllib.BattleScriptManager) -> None:
+    with open("data/overlay.dec/overlay_0012.dec.bin", "rb") as orig_file:
+        orig_data = orig_file.read()
+    file = io.BytesIO(orig_data)
+    battle_manager.save_overlay12(file)
+    assert file.getvalue() == orig_data
+
+
+def test_rebuild_overlay123(menu_manager: mnllib.MenuScriptManager) -> None:
+    with open("data/overlay.dec/overlay_0123.dec.bin", "rb") as orig_file:
+        orig_data = orig_file.read()
+    file = io.BytesIO(orig_data)
+    menu_manager.save_overlay123(file)
+    assert file.getvalue() == orig_data
+
+
+def test_rebuild_overlay124(shop_manager: mnllib.ShopScriptManager) -> None:
+    with open("data/overlay.dec/overlay_0124.dec.bin", "rb") as orig_file:
+        orig_data = orig_file.read()
+    file = io.BytesIO(orig_data)
+    shop_manager.save_overlay124(file)
     assert file.getvalue() == orig_data

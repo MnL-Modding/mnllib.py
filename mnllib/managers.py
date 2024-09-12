@@ -1,28 +1,70 @@
+import abc
 import struct
 import itertools
 import warnings
 import typing
 
 from .consts import (
-    COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    BATTLE_NUMBER_OF_COMMANDS,
+    FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
     FEVENT_OFFSET_TABLE_LENGTH_ADDRESS,
     FEVENT_OFFSET_TABLE_ADDRESS,
-    NUMBER_OF_COMMANDS,
+    FEVENT_NUMBER_OF_COMMANDS,
+    MENU_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    MENU_NUMBER_OF_COMMANDS,
+    SHOP_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    SHOP_NUMBER_OF_COMMANDS,
 )
 from .misc import FEventChunk, MnLLibWarning, parse_fevent_chunk
-from .script import CommandParameterMetadata, Script
+from .script import CommandParameterMetadata, FEventScript
 
 
-class MnLScriptManager:
-    fevent_offset_table: list[tuple[int, int, int]]
+class MnLScriptManager(abc.ABC):
     command_parameter_metadata_table: list[CommandParameterMetadata]
-    fevent_chunks: list[tuple[Script | None, FEventChunk | None, FEventChunk | None]]
+
+    def __init__(self) -> None:
+        self.command_parameter_metadata_table = []
+
+    def load_command_parameter_metadata_table(
+        self, stream: typing.BinaryIO, number_of_commands: int
+    ) -> None:
+        self.command_parameter_metadata_table = []
+        for _ in range(number_of_commands):
+            self.command_parameter_metadata_table.append(
+                CommandParameterMetadata.from_bytes(stream.read(16))
+            )
+
+    def save_command_parameter_metadata_table(
+        self, data: bytearray, metadata_table_address: int, number_of_commands: int
+    ) -> None:
+        data[
+            metadata_table_address : (metadata_table_address + number_of_commands * 16)
+        ] = b"".join(
+            [
+                parameter_metadata.to_bytes()
+                for parameter_metadata in self.command_parameter_metadata_table
+            ]
+        )
+
+
+class FEventScriptManager(MnLScriptManager):
+    fevent_offset_table: list[tuple[int, int, int]]
+    fevent_chunks: list[
+        tuple[FEventScript | None, FEventChunk | None, FEventChunk | None]
+    ]
     fevent_footer_offset: int
     fevent_footer: bytes
 
     def __init__(self, load: bool = True) -> None:
+        super().__init__()
         if load:
             self.load_all()
+        else:
+            self.fevent_offset_table = []
+            self.fevent_chunks = []
+            self.fevent_footer_offset = 0
+            self.fevent_footer = b""
 
     def load_overlay3(
         self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0003.dec.bin"
@@ -59,12 +101,8 @@ class MnLScriptManager:
             close_file = True
 
         try:
-            file.seek(COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
-            self.command_parameter_metadata_table = []
-            for _ in range(NUMBER_OF_COMMANDS):
-                self.command_parameter_metadata_table.append(
-                    CommandParameterMetadata.from_bytes(file.read(16))
-                )
+            file.seek(FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
+            self.load_command_parameter_metadata_table(file, FEVENT_NUMBER_OF_COMMANDS)
         finally:
             if close_file:
                 file.close()
@@ -101,7 +139,9 @@ class MnLScriptManager:
                     index += 1
                 self.fevent_chunks.append(
                     typing.cast(
-                        tuple[Script | None, FEventChunk | None, FEventChunk | None],
+                        tuple[
+                            FEventScript | None, FEventChunk | None, FEventChunk | None
+                        ],
                         chunk_triple,
                     )
                 )
@@ -175,15 +215,10 @@ class MnLScriptManager:
         try:
             overlay6_raw = bytearray(file.read())
 
-            overlay6_raw[
-                COMMAND_PARAMETER_METADATA_TABLE_ADDRESS : (
-                    COMMAND_PARAMETER_METADATA_TABLE_ADDRESS + NUMBER_OF_COMMANDS * 16
-                )
-            ] = b"".join(
-                [
-                    parameter_metadata.to_bytes()
-                    for parameter_metadata in self.command_parameter_metadata_table
-                ]
+            self.save_command_parameter_metadata_table(
+                overlay6_raw,
+                FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                FEVENT_NUMBER_OF_COMMANDS,
             )
 
             file.seek(0)
@@ -194,7 +229,7 @@ class MnLScriptManager:
                 file.close()
 
     def save_fevent(
-        self, file: typing.BinaryIO | str = "data/FEvent/FEvent.dat"
+        self, file: typing.BinaryIO | str = "data/data/FEvent/FEvent.dat"
     ) -> None:
         close_file = False
         if isinstance(file, str):
@@ -223,3 +258,159 @@ class MnLScriptManager:
         self.save_fevent()
         self.save_overlay6()
         self.save_overlay3()
+
+
+class BattleScriptManager(MnLScriptManager):
+    def __init__(self, load: bool = True) -> None:
+        super().__init__()
+        if load:
+            self.load_all()
+
+    def load_overlay12(
+        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0012.dec.bin"
+    ) -> None:
+        close_file = False
+        if isinstance(file, str):
+            file = open(file, "rb")
+            close_file = True
+
+        try:
+            file.seek(BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
+            self.load_command_parameter_metadata_table(file, BATTLE_NUMBER_OF_COMMANDS)
+        finally:
+            if close_file:
+                file.close()
+
+    def load_all(self) -> None:
+        self.load_overlay12()
+
+    def save_overlay12(
+        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0012.dec.bin"
+    ) -> None:
+        close_file = False
+        if isinstance(file, str):
+            file = open(file, "r+b")
+            close_file = True
+
+        try:
+            overlay12_raw = bytearray(file.read())
+
+            self.save_command_parameter_metadata_table(
+                overlay12_raw,
+                BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                BATTLE_NUMBER_OF_COMMANDS,
+            )
+
+            file.seek(0)
+            file.truncate()
+            file.write(overlay12_raw)
+        finally:
+            if close_file:
+                file.close()
+
+    def save_all(self) -> None:
+        self.save_overlay12()
+
+
+class MenuScriptManager(MnLScriptManager):
+    def __init__(self, load: bool = True) -> None:
+        super().__init__()
+        if load:
+            self.load_all()
+
+    def load_overlay123(
+        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0123.dec.bin"
+    ) -> None:
+        close_file = False
+        if isinstance(file, str):
+            file = open(file, "rb")
+            close_file = True
+
+        try:
+            file.seek(MENU_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
+            self.load_command_parameter_metadata_table(file, MENU_NUMBER_OF_COMMANDS)
+        finally:
+            if close_file:
+                file.close()
+
+    def load_all(self) -> None:
+        self.load_overlay123()
+
+    def save_overlay123(
+        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0123.dec.bin"
+    ) -> None:
+        close_file = False
+        if isinstance(file, str):
+            file = open(file, "r+b")
+            close_file = True
+
+        try:
+            overlay123_raw = bytearray(file.read())
+
+            self.save_command_parameter_metadata_table(
+                overlay123_raw,
+                MENU_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                MENU_NUMBER_OF_COMMANDS,
+            )
+
+            file.seek(0)
+            file.truncate()
+            file.write(overlay123_raw)
+        finally:
+            if close_file:
+                file.close()
+
+    def save_all(self) -> None:
+        self.save_overlay123()
+
+
+class ShopScriptManager(MnLScriptManager):
+    def __init__(self, load: bool = True) -> None:
+        super().__init__()
+        if load:
+            self.load_all()
+
+    def load_overlay124(
+        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0124.dec.bin"
+    ) -> None:
+        close_file = False
+        if isinstance(file, str):
+            file = open(file, "rb")
+            close_file = True
+
+        try:
+            file.seek(SHOP_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
+            self.load_command_parameter_metadata_table(file, SHOP_NUMBER_OF_COMMANDS)
+        finally:
+            if close_file:
+                file.close()
+
+    def load_all(self) -> None:
+        self.load_overlay124()
+
+    def save_overlay124(
+        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0124.dec.bin"
+    ) -> None:
+        close_file = False
+        if isinstance(file, str):
+            file = open(file, "r+b")
+            close_file = True
+
+        try:
+            overlay124_raw = bytearray(file.read())
+
+            self.save_command_parameter_metadata_table(
+                overlay124_raw,
+                SHOP_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                SHOP_NUMBER_OF_COMMANDS,
+            )
+
+            file.seek(0)
+            file.truncate()
+            file.write(overlay124_raw)
+        finally:
+            if close_file:
+                file.close()
+
+    def save_all(self) -> None:
+        self.save_overlay124()

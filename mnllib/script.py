@@ -6,7 +6,7 @@ import io
 import warnings
 import typing
 
-from .consts import COMMAND_PARAMETER_STRUCT_MAP, NUMBER_OF_COMMANDS
+from .consts import COMMAND_PARAMETER_STRUCT_MAP
 from .misc import FEventChunk, MnLLibWarning
 from .utils import read_length_prefixed_array
 
@@ -14,7 +14,166 @@ if typing.TYPE_CHECKING:
     from .managers import MnLScriptManager
 
 
-class ScriptHeader:
+class CommandParsingError(Exception):
+    pass
+
+
+class InvalidCommandIDError(CommandParsingError):
+    message: str
+    command_id: int
+
+    def __init__(self, command_id: int, message: str | None = None) -> None:
+        if message is None:
+            message = f"0x{command_id:04X}"
+        super().__init__(message)
+        self.message = message
+        self.command_id = command_id
+
+    def __reduce__(self) -> tuple[type[typing.Self], tuple[int, str]]:
+        return self.__class__, (self.command_id, self.message)
+
+
+class InvalidCommandParameterTypeError(CommandParsingError):
+    message: str
+    parameter_type: int
+
+    def __init__(self, parameter_type: int, message: str | None = None) -> None:
+        if message is None:
+            message = f"0x{parameter_type:X}"
+        super().__init__(message)
+        self.message = message
+        self.parameter_type = parameter_type
+
+    def __reduce__(self) -> tuple[type[typing.Self], tuple[int, str]]:
+        return self.__class__, (self.parameter_type, self.message)
+
+
+class Variable:
+    number: int
+
+    def __init__(self, number: int) -> None:
+        self.number = number
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> typing.Self:
+        (number,) = struct.unpack("<H", data)
+
+        return cls(number)
+
+    def to_bytes(self) -> bytes:
+        return struct.pack("<H", self.number)
+
+
+class Command:
+    command_id: int
+    result_variable: Variable | None
+    arguments: list[int | Variable]
+
+    def __init__(
+        self,
+        command_id: int,
+        arguments: list[int | Variable] = [],
+        result_variable: Variable | None = None,
+    ) -> None:
+        self.command_id = command_id
+        self.result_variable = result_variable
+        self.arguments = arguments
+
+    @classmethod
+    def from_stream(
+        cls, manager: MnLScriptManager, stream: typing.BinaryIO
+    ) -> typing.Self:
+        command_id: int
+        (command_id,) = struct.unpack("<H", stream.read(2))
+        if command_id >= len(manager.command_parameter_metadata_table):
+            raise InvalidCommandIDError(command_id)
+        (param_variables_bitfield,) = struct.unpack("<I", stream.read(4))
+
+        param_metadata = manager.command_parameter_metadata_table[command_id]
+        if param_metadata.has_return_value:
+            result_variable = Variable.from_bytes(stream.read(2))
+        else:
+            result_variable = None
+        arguments: list[int | Variable] = []
+        for i, param_type in enumerate(param_metadata.parameter_types):
+            if param_variables_bitfield & (1 << i):
+                arguments.append(Variable.from_bytes(stream.read(2)))
+            else:
+                if param_type >= len(COMMAND_PARAMETER_STRUCT_MAP):
+                    raise InvalidCommandParameterTypeError(param_type)
+                arguments.append(
+                    COMMAND_PARAMETER_STRUCT_MAP[param_type].unpack(
+                        stream.read(COMMAND_PARAMETER_STRUCT_MAP[param_type].size)
+                    )[0]
+                )
+
+        return cls(command_id, arguments, result_variable)
+
+    def to_bytes(self, manager: MnLScriptManager) -> bytes:
+        data_io = io.BytesIO()
+
+        param_variables_bitfield = 0
+        for i, argument in enumerate(self.arguments):
+            if isinstance(argument, Variable):
+                param_variables_bitfield |= 1 << i
+        data_io.write(struct.pack("<HI", self.command_id, param_variables_bitfield))
+
+        if self.result_variable is not None:
+            data_io.write(self.result_variable.to_bytes())
+        param_metadata = manager.command_parameter_metadata_table[self.command_id]
+        if len(param_metadata.parameter_types) != len(self.arguments):
+            raise ValueError(
+                f"number of arguments ({len(self.arguments)}) of "
+                f"command (0x{self.command_id:04X}) doesn't match that specified by "
+                f"the metadata ({len(param_metadata.parameter_types)})"
+            )
+        for param_type, argument in zip(param_metadata.parameter_types, self.arguments):
+            if isinstance(argument, Variable):
+                data_io.write(argument.to_bytes())
+            else:
+                if param_type >= len(COMMAND_PARAMETER_STRUCT_MAP):
+                    raise InvalidCommandParameterTypeError(param_type)
+                data_io.write(COMMAND_PARAMETER_STRUCT_MAP[param_type].pack(argument))
+
+        return data_io.getvalue()
+
+
+class Subroutine:
+    commands: list[Command]
+    footer: bytes
+
+    def __init__(self, commands: list[Command], footer: bytes = b"") -> None:
+        self.commands = commands
+        self.footer = footer
+
+    @classmethod
+    def from_stream(
+        cls, manager: MnLScriptManager, stream: typing.BinaryIO
+    ) -> typing.Self:
+        footer = b""
+        commands: list[Command] = []
+        while stream.read(1) != b"":
+            stream.seek(-1, os.SEEK_CUR)
+            old_offset = stream.tell()
+            try:
+                commands.append(Command.from_stream(manager, stream))
+            except (struct.error, InvalidCommandIDError):
+                stream.seek(old_offset)
+                footer = stream.read()
+                break
+        return cls(commands, footer)
+
+    def to_bytes(self, manager: MnLScriptManager) -> bytes:
+        data_io = io.BytesIO()
+
+        for command in self.commands:
+            data_io.write(command.to_bytes(manager))
+        data_io.write(self.footer)
+
+        return data_io.getvalue()
+
+
+class FEventScriptHeader:
     index: int | None
 
     unk_0x00: bytes
@@ -44,8 +203,8 @@ class ScriptHeader:
         section1_unk1: bytes,
         array4: list[tuple[int, int, int, int, int]],
         array5: list[int],
-        subroutine_table: list[int],
-        post_table_subroutine: Subroutine,
+        subroutine_table: list[int] = [],
+        post_table_subroutine: Subroutine = Subroutine([]),
     ) -> None:
         self.index = index
 
@@ -194,173 +353,14 @@ class ScriptHeader:
         return data_io.getvalue()
 
 
-class CommandParsingError(Exception):
-    pass
-
-
-class InvalidCommandIDError(CommandParsingError):
-    message: str
-    command_id: int
-
-    def __init__(self, command_id: int, message: str | None = None) -> None:
-        if message is None:
-            message = f"0x{command_id:04X}"
-        super().__init__(message)
-        self.message = message
-        self.command_id = command_id
-
-    def __reduce__(self) -> tuple[type[typing.Self], tuple[int, str]]:
-        return self.__class__, (self.command_id, self.message)
-
-
-class InvalidCommandParameterTypeError(CommandParsingError):
-    message: str
-    parameter_type: int
-
-    def __init__(self, parameter_type: int, message: str | None = None) -> None:
-        if message is None:
-            message = f"0x{parameter_type:X}"
-        super().__init__(message)
-        self.message = message
-        self.parameter_type = parameter_type
-
-    def __reduce__(self) -> tuple[type[typing.Self], tuple[int, str]]:
-        return self.__class__, (self.parameter_type, self.message)
-
-
-class Variable:
-    number: int
-
-    def __init__(self, number: int) -> None:
-        self.number = number
-
-    @classmethod
-    def from_bytes(cls, data: bytes) -> typing.Self:
-        (number,) = struct.unpack("<H", data)
-
-        return cls(number)
-
-    def to_bytes(self) -> bytes:
-        return struct.pack("<H", self.number)
-
-
-class Command:
-    command_id: int
-    result_variable: Variable | None
-    arguments: list[int | Variable]
-
-    def __init__(
-        self,
-        command_id: int,
-        arguments: list[int | Variable],
-        result_variable: Variable | None = None,
-    ) -> None:
-        self.command_id = command_id
-        self.result_variable = result_variable
-        self.arguments = arguments
-
-    @classmethod
-    def from_stream(
-        cls, manager: MnLScriptManager, stream: typing.BinaryIO
-    ) -> typing.Self:
-        command_id: int
-        (command_id,) = struct.unpack("<H", stream.read(2))
-        if command_id >= NUMBER_OF_COMMANDS:
-            raise InvalidCommandIDError(command_id)
-        (param_variables_bitfield,) = struct.unpack("<I", stream.read(4))
-
-        param_metadata = manager.command_parameter_metadata_table[command_id]
-        if param_metadata.has_return_value:
-            result_variable = Variable.from_bytes(stream.read(2))
-        else:
-            result_variable = None
-        arguments: list[int | Variable] = []
-        for i, param_type in enumerate(param_metadata.parameter_types):
-            if param_variables_bitfield & (1 << i):
-                arguments.append(Variable.from_bytes(stream.read(2)))
-            else:
-                if param_type >= len(COMMAND_PARAMETER_STRUCT_MAP):
-                    raise InvalidCommandParameterTypeError(param_type)
-                arguments.append(
-                    COMMAND_PARAMETER_STRUCT_MAP[param_type].unpack(
-                        stream.read(COMMAND_PARAMETER_STRUCT_MAP[param_type].size)
-                    )[0]
-                )
-
-        return cls(command_id, arguments, result_variable)
-
-    def to_bytes(self, manager: MnLScriptManager) -> bytes:
-        data_io = io.BytesIO()
-
-        param_variables_bitfield = 0
-        for i, argument in enumerate(self.arguments):
-            if isinstance(argument, Variable):
-                param_variables_bitfield |= 1 << i
-        data_io.write(struct.pack("<HI", self.command_id, param_variables_bitfield))
-
-        if self.result_variable is not None:
-            data_io.write(self.result_variable.to_bytes())
-        param_metadata = manager.command_parameter_metadata_table[self.command_id]
-        if len(param_metadata.parameter_types) != len(self.arguments):
-            raise ValueError(
-                f"number of arguments ({len(self.arguments)}) of "
-                f"command (0x{self.command_id:04X}) doesn't match that specified by "
-                f"the metadata ({len(param_metadata.parameter_types)})"
-            )
-        for param_type, argument in zip(param_metadata.parameter_types, self.arguments):
-            if isinstance(argument, Variable):
-                data_io.write(argument.to_bytes())
-            else:
-                if param_type >= len(COMMAND_PARAMETER_STRUCT_MAP):
-                    raise InvalidCommandParameterTypeError(param_type)
-                data_io.write(COMMAND_PARAMETER_STRUCT_MAP[param_type].pack(argument))
-
-        return data_io.getvalue()
-
-
-class Subroutine:
-    commands: list[Command]
-    footer: bytes
-
-    def __init__(self, commands: list[Command], footer: bytes = b"") -> None:
-        self.commands = commands
-        self.footer = footer
-
-    @classmethod
-    def from_stream(
-        cls, manager: MnLScriptManager, stream: typing.BinaryIO
-    ) -> typing.Self:
-        footer = b""
-        commands: list[Command] = []
-        while stream.read(1) != b"":
-            stream.seek(-1, os.SEEK_CUR)
-            old_offset = stream.tell()
-            try:
-                commands.append(Command.from_stream(manager, stream))
-            except (struct.error, InvalidCommandIDError):
-                stream.seek(old_offset)
-                footer = stream.read()
-                break
-        return cls(commands, footer)
-
-    def to_bytes(self, manager: MnLScriptManager) -> bytes:
-        data_io = io.BytesIO()
-
-        for command in self.commands:
-            data_io.write(command.to_bytes(manager))
-        data_io.write(self.footer)
-
-        return data_io.getvalue()
-
-
-class Script(FEventChunk):
+class FEventScript(FEventChunk):
     index: int | None
-    header: ScriptHeader
+    header: FEventScriptHeader
     subroutines: list[Subroutine]
 
     def __init__(
         self,
-        header: ScriptHeader,
+        header: FEventScriptHeader,
         subroutines: list[Subroutine],
         index: int | None = None,
     ) -> None:
@@ -373,7 +373,7 @@ class Script(FEventChunk):
         cls, manager: MnLScriptManager, data: bytes, index: int | None = None
     ) -> typing.Self:
         data_io = io.BytesIO(data)
-        header = ScriptHeader.from_stream(manager, data_io, index)
+        header = FEventScriptHeader.from_stream(manager, data_io, index)
 
         subroutine_base_offset = data_io.tell()
         subroutines: list[Subroutine] = []

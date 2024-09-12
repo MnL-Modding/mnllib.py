@@ -21,7 +21,7 @@ class FEventChunk(abc.ABC):
 def parse_fevent_chunk(
     manager: MnLScriptManager, data: bytes, index: int | None = None
 ) -> FEventChunk | None:
-    from .script import Script
+    from .script import FEventScript
     from .text import LanguageTable
 
     if len(data) == 0:
@@ -29,4 +29,4 @@ def parse_fevent_chunk(
     elif struct.unpack_from("<I", data)[0] == 0x128:
         return LanguageTable.from_bytes(data, is_dialog=True, index=index)
     else:
-        return Script.from_bytes(manager, data, index)
+        return FEventScript.from_bytes(manager, data, index)

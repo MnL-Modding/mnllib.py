@@ -9,17 +9,17 @@ from .misc import FEventChunk
 
 
 class TextTable:
-    strings: list[bytes]
+    entries: list[bytes]
     is_dialog: bool
     textbox_sizes: list[tuple[int, int]] | None
 
     def __init__(
         self,
-        strings: list[bytes],
+        entries: list[bytes],
         is_dialog: bool,
         textbox_sizes: list[tuple[int, int]] | None = None,
     ) -> None:
-        self.strings = strings
+        self.entries = entries
         self.is_dialog = is_dialog
         self.textbox_sizes = textbox_sizes
 
@@ -27,47 +27,47 @@ class TextTable:
     def from_bytes(cls, data: bytes, is_dialog: bool) -> typing.Self:
         data_io = io.BytesIO(data)
 
-        string_offsets: list[int] = []
-        while (data_io.tell() < string_offsets[0]) if len(string_offsets) > 0 else True:
-            string_offsets.append(struct.unpack("<I", data_io.read(4))[0])
+        entry_offsets: list[int] = []
+        while (data_io.tell() < entry_offsets[0]) if len(entry_offsets) > 0 else True:
+            entry_offsets.append(struct.unpack("<I", data_io.read(4))[0])
 
-        strings: list[bytes] = []
+        entries: list[bytes] = []
         if is_dialog:
             textbox_sizes: list[tuple[int, int]] | None = []
         else:
             textbox_sizes = None
-        for i, offset in enumerate(string_offsets):
-            string_data = data[
-                offset : string_offsets[i + 1] if i + 1 < len(string_offsets) else None
+        for i, offset in enumerate(entry_offsets):
+            entry_data = data[
+                offset : entry_offsets[i + 1] if i + 1 < len(entry_offsets) else None
             ]
             if is_dialog:
                 typing.cast(list[tuple[int, int]], textbox_sizes).append(
-                    struct.unpack_from("<BB", string_data)
+                    struct.unpack_from("<BB", entry_data)
                 )
-                string_data = string_data[2:]
-            strings.append(string_data)
+                entry_data = entry_data[2:]
+            entries.append(entry_data)
 
-        return cls(strings, is_dialog, textbox_sizes)
+        return cls(entries, is_dialog, textbox_sizes)
 
     def to_bytes(self) -> bytes:
-        string_offsets_raw = io.BytesIO()
-        strings_raw = io.BytesIO()
+        entry_offsets_raw = io.BytesIO()
+        entries_raw = io.BytesIO()
 
-        base_string_offset = len(self.strings) * 4
-        for i, string in enumerate(self.strings):
-            string_offsets_raw.write(
-                struct.pack("<I", base_string_offset + strings_raw.tell())
+        base_entry_offset = len(self.entries) * 4
+        for i, entry in enumerate(self.entries):
+            entry_offsets_raw.write(
+                struct.pack("<I", base_entry_offset + entries_raw.tell())
             )
             if self.is_dialog:
-                strings_raw.write(
+                entries_raw.write(
                     struct.pack(
                         "<BB",
                         *typing.cast(list[tuple[int, int]], self.textbox_sizes)[i],
                     )
                 )
-            strings_raw.write(string)
+            entries_raw.write(entry)
 
-        return string_offsets_raw.getvalue() + strings_raw.getvalue()
+        return entry_offsets_raw.getvalue() + entries_raw.getvalue()
 
 
 class LanguageTable(FEventChunk):
