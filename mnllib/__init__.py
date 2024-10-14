@@ -1,3 +1,4 @@
+from .compression import *
 from .consts import *
 from .managers import *
 from .misc import *
