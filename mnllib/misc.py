@@ -30,10 +30,13 @@ def decode_varint(stream: typing.BinaryIO) -> int:
 def encode_varint(value: int) -> bytearray:
     result = bytearray([value & 0b00111111])
     value >>= 6
-    while value > 0:
-        result.append(value & 0b00111111)
+    while value > 255:
+        result.append(value & 0xFF)
         result[0] += 1 << 6
         value >>= 6
+    if value > 0:
+        result.append(value)
+        result[0] += 1 << 6
     return result
 
 
