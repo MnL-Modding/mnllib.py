@@ -23,7 +23,7 @@ def decode_varint(stream: typing.BinaryIO) -> int:
     size = data >> 6
     result = data & 0b00111111
     for i in range(size):
-        result |= struct.unpack("<B", stream.read(1))[0] << (i + 1) * 6
+        result |= struct.unpack("<B", stream.read(1))[0] << ((i + 1) * 6)
     return result
 
 

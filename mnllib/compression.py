@@ -31,7 +31,7 @@ def decompress(stream: typing.BinaryIO) -> bytes:
                         case 2:
                             data, data2 = struct.unpack("<BB", stream.read(2))
                             result.seek(-(data | ((data2 & 0xF0) << 4)), os.SEEK_CUR)
-                            data_to_copy = stream.read((data2 & 0x0F) + 2)
+                            data_to_copy = result.read((data2 & 0x0F) + 2)
                             result.seek(0, os.SEEK_END)
                             result.write(data_to_copy)
                         case 3:
