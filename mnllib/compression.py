@@ -61,19 +61,19 @@ def decompress(stream: typing.BinaryIO) -> bytes:
     return result.getvalue()
 
 
-def compress(stream: typing.BinaryIO) -> bytes:
+def compress(data: bytes) -> bytes:
     result = io.BytesIO()
 
-    uncompressed_size = stream.seek(0, os.SEEK_END)
+    uncompressed_size = len(data)
     result.write(encode_varint(uncompressed_size))
     num_blocks = math.ceil(uncompressed_size / 512)
     result.write(encode_varint(num_blocks - 1))
 
     for block_number in range(num_blocks):
         uncompressed_block_position = block_number * 512
-        stream.seek(uncompressed_block_position)
-        uncompressed_block = stream.read(512)
-        uncompressed_block_size = len(uncompressed_block)
+        uncompressed_block_size = min(
+            uncompressed_size - uncompressed_block_position, 512
+        )
         uncompressed_block_offset = 0
         compressed_block_position = result.tell()
         result.write(struct.pack("<H", 0x0000))
@@ -86,19 +86,19 @@ def compress(stream: typing.BinaryIO) -> bytes:
             for command_number in range(4):
                 if uncompressed_block_offset >= uncompressed_block_size:
                     break
-                first_byte = uncompressed_block[uncompressed_block_offset]
+                current_uncompressed_position = (
+                    uncompressed_block_position + uncompressed_block_offset
+                )
+                first_byte = data[current_uncompressed_position]
 
                 lz77_best_length = 0
                 lz77_best_offset = -1
                 for offset in range(
-                    min(uncompressed_block_position + uncompressed_block_offset, 0xFFF),
+                    min(current_uncompressed_position, 0xFFF),
                     0,
                     -1,
                 ):
                     current_length = 0
-                    stream.seek(
-                        uncompressed_block_position + uncompressed_block_offset - offset
-                    )
                     while (
                         current_length < 17
                         and current_length < offset
@@ -106,10 +106,10 @@ def compress(stream: typing.BinaryIO) -> bytes:
                         < uncompressed_block_size
                     ):
                         if (
-                            uncompressed_block[
-                                uncompressed_block_offset + current_length
+                            data[current_uncompressed_position + current_length]
+                            != data[
+                                current_uncompressed_position - offset + current_length
                             ]
-                            != stream.read(1)[0]
                         ):
                             break
                         current_length += 1
@@ -122,10 +122,7 @@ def compress(stream: typing.BinaryIO) -> bytes:
                     uncompressed_block_offset + rle_count < uncompressed_block_size
                     and rle_count < 257
                 ):
-                    if (
-                        uncompressed_block[uncompressed_block_offset + rle_count]
-                        != first_byte
-                    ):
+                    if data[current_uncompressed_position + rle_count] != first_byte:
                         break
                     rle_count += 1
 
