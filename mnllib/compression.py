@@ -95,7 +95,7 @@ def compress(data: bytes) -> bytes:
                 lz77_best_offset = -1
                 for offset in range(
                     min(current_uncompressed_position, 0xFFF),
-                    0,
+                    1,
                     -1,
                 ):
                     current_length = 0
