@@ -98,7 +98,7 @@ class LanguageTable(FEventChunk):
             if len(text_table_data) <= 0:
                 text_tables.append(None)
             elif (not is_dialog and i != len(language_table) - 1) or (
-                is_dialog and i >= 0x44 and i <= 0x48
+                is_dialog and 0x44 <= i <= 0x48
             ):
                 text_tables.append(TextTable.from_bytes(text_table_data, is_dialog))
             else:

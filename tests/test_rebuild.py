@@ -76,7 +76,7 @@ def test_rebuild_overlay6(fevent_manager: mnllib.FEventScriptManager) -> None:
 
 
 def test_rebuild_fevent(fevent_manager: mnllib.FEventScriptManager) -> None:
-    with open("data/data/FEvent/FEvent.dat", "rb") as orig_file:
+    with open(f"data/data/{mnllib.FEVENT_FILE_NAME}", "rb") as orig_file:
         orig_data = orig_file.read()
     file = io.BytesIO()
     fevent_manager.save_fevent(file)

@@ -1,4 +1,5 @@
 import abc
+import pathlib
 import struct
 import itertools
 import warnings
@@ -8,6 +9,7 @@ from .consts import (
     BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
     BATTLE_NUMBER_OF_COMMANDS,
     FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    FEVENT_FILE_NAME,
     FEVENT_OFFSET_TABLE_LENGTH_ADDRESS,
     FEVENT_OFFSET_TABLE_ADDRESS,
     FEVENT_NUMBER_OF_COMMANDS,
@@ -67,10 +69,13 @@ class FEventScriptManager(MnLScriptManager):
             self.fevent_footer = b""
 
     def load_overlay3(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0003.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0003.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "rb")
             close_file = True
 
@@ -93,10 +98,13 @@ class FEventScriptManager(MnLScriptManager):
                 file.close()
 
     def load_overlay6(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0006.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0006.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "rb")
             close_file = True
 
@@ -108,10 +116,11 @@ class FEventScriptManager(MnLScriptManager):
                 file.close()
 
     def load_fevent(
-        self, file: typing.BinaryIO | str = "data/data/FEvent/FEvent.dat"
+        self,
+        file: typing.BinaryIO | pathlib.Path | str = f"data/data/{FEVENT_FILE_NAME}",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "rb")
             close_file = True
 
@@ -158,10 +167,13 @@ class FEventScriptManager(MnLScriptManager):
         self.load_fevent()
 
     def save_overlay3(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0003.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0003.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "r+b")
             close_file = True
 
@@ -205,10 +217,13 @@ class FEventScriptManager(MnLScriptManager):
                 file.close()
 
     def save_overlay6(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0006.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0006.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "r+b")
             close_file = True
 
@@ -229,10 +244,11 @@ class FEventScriptManager(MnLScriptManager):
                 file.close()
 
     def save_fevent(
-        self, file: typing.BinaryIO | str = "data/data/FEvent/FEvent.dat"
+        self,
+        file: typing.BinaryIO | pathlib.Path | str = f"data/data/{FEVENT_FILE_NAME}",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "wb")
             close_file = True
 
@@ -267,10 +283,13 @@ class BattleScriptManager(MnLScriptManager):
             self.load_all()
 
     def load_overlay12(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0012.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0012.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "rb")
             close_file = True
 
@@ -285,10 +304,13 @@ class BattleScriptManager(MnLScriptManager):
         self.load_overlay12()
 
     def save_overlay12(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0012.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0012.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "r+b")
             close_file = True
 
@@ -319,10 +341,13 @@ class MenuScriptManager(MnLScriptManager):
             self.load_all()
 
     def load_overlay123(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0123.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0123.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "rb")
             close_file = True
 
@@ -337,10 +362,13 @@ class MenuScriptManager(MnLScriptManager):
         self.load_overlay123()
 
     def save_overlay123(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0123.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0123.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "r+b")
             close_file = True
 
@@ -371,10 +399,13 @@ class ShopScriptManager(MnLScriptManager):
             self.load_all()
 
     def load_overlay124(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0124.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0124.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "rb")
             close_file = True
 
@@ -389,10 +420,13 @@ class ShopScriptManager(MnLScriptManager):
         self.load_overlay124()
 
     def save_overlay124(
-        self, file: typing.BinaryIO | str = "data/overlay.dec/overlay_0124.dec.bin"
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0124.dec.bin",
     ) -> None:
         close_file = False
-        if isinstance(file, str):
+        if isinstance(file, (pathlib.Path, str)):
             file = open(file, "r+b")
             close_file = True
 
