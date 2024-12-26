@@ -11,7 +11,7 @@ from .misc import FEventChunk, MnLLibWarning
 from .utils import read_length_prefixed_array
 
 if typing.TYPE_CHECKING:
-    from .managers import MnLScriptManager
+    from .managers import BattleScriptManager, FEventScriptManager, MnLScriptManager
 
 
 class CommandParsingError(Exception):
@@ -224,7 +224,7 @@ class FEventScriptHeader:
     @classmethod
     def from_stream(
         cls,
-        manager: MnLScriptManager,
+        manager: FEventScriptManager,
         stream: typing.BinaryIO,
         index: int | None = None,
     ) -> typing.Self:
@@ -303,7 +303,7 @@ class FEventScriptHeader:
             post_table_subroutine=post_table_subroutine,
         )
 
-    def to_bytes(self, manager: MnLScriptManager) -> bytes:
+    def to_bytes(self, manager: FEventScriptManager) -> bytes:
         data_io = io.BytesIO()
 
         data_io.write(self.unk_0x00)
@@ -370,7 +370,7 @@ class FEventScript(FEventChunk):
 
     @classmethod
     def from_bytes(
-        cls, manager: MnLScriptManager, data: bytes, index: int | None = None
+        cls, manager: FEventScriptManager, data: bytes, index: int | None = None
     ) -> typing.Self:
         data_io = io.BytesIO(data)
         header = FEventScriptHeader.from_stream(manager, data_io, index)
@@ -399,7 +399,7 @@ class FEventScript(FEventChunk):
 
         return cls(header, subroutines, index)
 
-    def to_bytes(self, manager: MnLScriptManager) -> bytes:
+    def to_bytes(self, manager: FEventScriptManager) -> bytes:
         subroutines_raw = io.BytesIO()
         self.header.subroutine_table = []
         for subroutine in self.subroutines:
@@ -407,6 +407,149 @@ class FEventScript(FEventChunk):
             subroutines_raw.write(subroutine.to_bytes(manager))
 
         return self.header.to_bytes(manager) + subroutines_raw.getvalue()
+
+
+class BattleScript:
+    index: int | None
+    post_table_subroutine: Subroutine
+    other_subroutines: list[Subroutine | None]
+    other_subroutines_body_order: list[int]
+    main_subroutine: Subroutine
+
+    def __init__(
+        self,
+        other_subroutines: list[Subroutine | None],
+        main_subroutine: Subroutine,
+        index: int | None = None,
+        post_table_subroutine: Subroutine = Subroutine([]),
+        other_subroutines_body_order: list[int] | None = None,
+    ) -> None:
+        self.index = index
+        self.post_table_subroutine = post_table_subroutine
+        self.other_subroutines = other_subroutines
+        if other_subroutines_body_order is None:
+            other_subroutines_body_order = [
+                i for i, x in enumerate(other_subroutines) if x is not None
+            ]
+        self.other_subroutines_body_order = other_subroutines_body_order
+        self.main_subroutine = main_subroutine
+
+    @classmethod
+    def from_bytes(
+        cls, manager: BattleScriptManager, data: bytes, index: int | None = None
+    ) -> typing.Self:
+        data_io = io.BytesIO(data)
+        num_offsets, main_subroutine_offset = struct.unpack("<HH", data_io.read(4))
+        num_other_subroutines = num_offsets - 1
+        other_subroutine_offsets = struct.unpack(
+            f"<{num_other_subroutines}H", data_io.read(num_other_subroutines * 2)
+        )
+        other_subroutines_body_order = sorted(
+            range(len(other_subroutine_offsets)),
+            key=lambda x: other_subroutine_offsets[x],
+        )[other_subroutine_offsets.count(0) :]
+
+        if len(other_subroutines_body_order) > 0:
+            post_table_subroutine = Subroutine.from_stream(
+                manager,
+                io.BytesIO(
+                    data[
+                        2
+                        + num_offsets * 2 : 4
+                        + other_subroutines_body_order[0] * 2
+                        + other_subroutine_offsets[other_subroutines_body_order[0]]
+                    ]
+                ),
+            )
+        else:
+            post_table_subroutine = Subroutine([])
+
+        other_subroutines: list[Subroutine | None] = []
+        for i, offset in enumerate(other_subroutine_offsets):
+            if offset == 0:
+                other_subroutines.append(None)
+                continue
+
+            try:
+                next_body_order_subroutine_index = other_subroutines_body_order[
+                    other_subroutines_body_order.index(i) + 1
+                ]
+            except IndexError:
+                next_body_order_subroutine_index = None
+            other_subroutines.append(
+                Subroutine.from_stream(
+                    manager,
+                    io.BytesIO(
+                        data[
+                            4
+                            + i * 2
+                            + offset : (
+                                (
+                                    4
+                                    + next_body_order_subroutine_index * 2
+                                    + other_subroutine_offsets[
+                                        next_body_order_subroutine_index
+                                    ]
+                                )
+                                if next_body_order_subroutine_index is not None
+                                else 2 + main_subroutine_offset
+                            )
+                        ]
+                    ),
+                )
+            )
+
+        if main_subroutine_offset != 0:
+            data_io.seek(2 + main_subroutine_offset)
+        main_subroutine = Subroutine.from_stream(manager, data_io)
+
+        return cls(
+            other_subroutines,
+            main_subroutine,
+            index,
+            post_table_subroutine,
+            other_subroutines_body_order,
+        )
+
+    def to_bytes(self, manager: BattleScriptManager) -> bytes:
+        subroutines_raw = io.BytesIO()
+        subroutines_raw.write(self.post_table_subroutine.to_bytes(manager))
+
+        num_other_subroutines = len(self.other_subroutines)
+        other_subroutine_offsets: list[int] = [0] * num_other_subroutines
+        for i in self.other_subroutines_body_order:
+            subroutine = self.other_subroutines[i]
+            if subroutine is None:
+                raise TypeError(
+                    f"subroutine (with index {i}{
+                        f" of script {self.index}"
+                        if self.index is not None
+                        else ""
+                    }) specified in 'self.other_subroutines_body_order' "
+                    "must not be None"
+                )
+
+            other_subroutine_offsets[i] = (
+                num_other_subroutines - i
+            ) * 2 + subroutines_raw.tell()
+            subroutines_raw.write(subroutine.to_bytes(manager))
+
+        main_subroutine_offset = (
+            (1 + num_other_subroutines) * 2 + subroutines_raw.tell()
+            if subroutines_raw.tell() != 0
+            else 0
+        )
+        subroutines_raw.write(self.main_subroutine.to_bytes(manager))
+
+        return (
+            struct.pack(
+                f"<{num_other_subroutines + 2}H",
+                num_other_subroutines + 1,
+                main_subroutine_offset,
+                *other_subroutine_offsets,
+            )
+            + subroutines_raw.getvalue()
+        )
 
 
 class CommandParameterMetadata:

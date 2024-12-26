@@ -2,6 +2,7 @@ import os
 import io
 import pathlib
 import itertools
+import typing
 
 import pytest
 
@@ -9,6 +10,13 @@ import mnllib
 
 
 os.chdir(pathlib.Path(__file__).parent)
+
+
+def open_or_skip(*args: typing.Any, **kwargs: typing.Any) -> typing.IO[typing.Any]:
+    try:
+        return typing.cast(typing.IO[typing.Any], open(*args, **kwargs))
+    except FileNotFoundError:
+        pytest.skip("file not present")
 
 
 @pytest.fixture
@@ -49,12 +57,9 @@ def shop_manager() -> mnllib.ShopScriptManager:
     ids=lambda path: path.as_posix(),
 )
 def test_rebuild_language_table_file(path: pathlib.Path) -> None:
-    try:
-        with path.open("rb") as orig_file:
-            orig_data = orig_file.read()
-    except FileNotFoundError:
-        pytest.skip("file not present")
-    language_table = mnllib.LanguageTable.from_bytes(orig_data, False)
+    with open_or_skip(path, "rb") as orig_file:
+        orig_data = orig_file.read()
+    language_table = mnllib.LanguageTable.from_bytes(orig_data, is_dialog=False)
     data = language_table.to_bytes()
     assert data == orig_data
 
@@ -88,6 +93,34 @@ def test_rebuild_overlay12(battle_manager: mnllib.BattleScriptManager) -> None:
         orig_data = orig_file.read()
     file = io.BytesIO(orig_data)
     battle_manager.save_overlay12(file)
+    assert file.getvalue() == orig_data
+
+
+def test_rebuild_overlay14(battle_manager: mnllib.BattleScriptManager) -> None:
+    with open("data/overlay.dec/overlay_0014.dec.bin", "rb") as orig_file:
+        orig_data = orig_file.read()
+    file = io.BytesIO(orig_data)
+    battle_manager.save_overlay14(file)
+    assert file.getvalue() == orig_data
+
+
+@pytest.mark.parametrize(
+    "address",
+    mnllib.BATTLE_SCRIPTS_FILES_METADATA.keys(),
+    ids=lambda address: f"0x{address:04X}",
+)
+def test_rebuild_battle_scripts_file(
+    battle_manager: mnllib.BattleScriptManager, address: int
+) -> None:
+    with open_or_skip(
+        f"data/data/{mnllib.BATTLE_SCRIPTS_DIRECTORY_NAME}/{
+            mnllib.BATTLE_SCRIPTS_FILES_METADATA[address].filename
+        }",
+        "rb",
+    ) as orig_file:
+        orig_data = orig_file.read()
+    file = io.BytesIO()
+    battle_manager.save_battle_scripts_file(address, file)
     assert file.getvalue() == orig_data
 
 

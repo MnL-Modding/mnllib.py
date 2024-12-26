@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import abc
+import dataclasses
 import struct
 import typing
 
 if typing.TYPE_CHECKING:
-    from .managers import MnLScriptManager
+    from .managers import FEventScriptManager
 
 
 class MnLLibWarning(UserWarning):
@@ -14,8 +15,14 @@ class MnLLibWarning(UserWarning):
 
 class FEventChunk(abc.ABC):
     @abc.abstractmethod
-    def to_bytes(self, manager: MnLScriptManager) -> bytes:
+    def to_bytes(self, manager: FEventScriptManager) -> bytes:
         pass
+
+
+@dataclasses.dataclass
+class BattleScriptsFileMetadata:
+    filename: str
+    offset_table_address: int
 
 
 def decode_varint(stream: typing.BinaryIO) -> int:
@@ -41,7 +48,7 @@ def encode_varint(value: int) -> bytearray:
 
 
 def parse_fevent_chunk(
-    manager: MnLScriptManager, data: bytes, index: int | None = None
+    manager: FEventScriptManager, data: bytes, index: int | None = None
 ) -> FEventChunk | None:
     from .script import FEventScript
     from .text import LanguageTable

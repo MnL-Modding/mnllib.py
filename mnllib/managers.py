@@ -8,6 +8,8 @@ import typing
 from .consts import (
     BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
     BATTLE_NUMBER_OF_COMMANDS,
+    BATTLE_SCRIPTS_DIRECTORY_NAME,
+    BATTLE_SCRIPTS_FILES_METADATA,
     FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
     FEVENT_FILE_NAME,
     FEVENT_OFFSET_TABLE_LENGTH_ADDRESS,
@@ -19,7 +21,8 @@ from .consts import (
     SHOP_NUMBER_OF_COMMANDS,
 )
 from .misc import FEventChunk, MnLLibWarning, parse_fevent_chunk
-from .script import CommandParameterMetadata, FEventScript
+from .script import BattleScript, CommandParameterMetadata, FEventScript
+from .utils import read_length_prefixed_array
 
 
 class MnLScriptManager(abc.ABC):
@@ -60,6 +63,7 @@ class FEventScriptManager(MnLScriptManager):
 
     def __init__(self, load: bool = True) -> None:
         super().__init__()
+
         if load:
             self.load_all()
         else:
@@ -277,10 +281,21 @@ class FEventScriptManager(MnLScriptManager):
 
 
 class BattleScriptManager(MnLScriptManager):
+    battle_offset_tables: dict[int, list[int]]
+    battle_scripts_files: dict[int, list[BattleScript]]
+    battle_scripts_files_footer_offsets: dict[int, int]
+    battle_scripts_files_footers: dict[int, bytes]
+
     def __init__(self, load: bool = True) -> None:
         super().__init__()
+
         if load:
             self.load_all()
+        else:
+            self.battle_offset_tables = {}
+            self.battle_scripts_files = {}
+            self.battle_scripts_files_footer_offsets = {}
+            self.battle_scripts_files_footers = {}
 
     def load_overlay12(
         self,
@@ -300,8 +315,85 @@ class BattleScriptManager(MnLScriptManager):
             if close_file:
                 file.close()
 
+    def load_overlay14(
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0014.dec.bin",
+    ) -> None:
+        close_file = False
+        if isinstance(file, (pathlib.Path, str)):
+            file = open(file, "rb")
+            close_file = True
+
+        try:
+            self.battle_offset_tables = {}
+            self.battle_scripts_files_footer_offsets = {}
+            for address, metadata in BATTLE_SCRIPTS_FILES_METADATA.items():
+                file.seek(metadata.offset_table_address)
+                self.battle_offset_tables[address] = read_length_prefixed_array(
+                    file, "<I", length_in_bytes=True
+                )
+                self.battle_scripts_files_footer_offsets[address] = (
+                    self.battle_offset_tables[address].pop()
+                )
+        finally:
+            if close_file:
+                file.close()
+
+    def load_battle_scripts_file(
+        self, address: int, file: typing.BinaryIO | pathlib.Path | str
+    ) -> None:
+        close_file = False
+        if isinstance(file, (pathlib.Path, str)):
+            file = open(file, "rb")
+            close_file = True
+
+        try:
+            self.battle_scripts_files[address] = []
+            offset_table = self.battle_offset_tables[address]
+            footer_offset = self.battle_scripts_files_footer_offsets[address]
+            for index, offset in enumerate(offset_table):
+                file.seek(offset)
+                self.battle_scripts_files[address].append(
+                    BattleScript.from_bytes(
+                        self,
+                        file.read(
+                            (
+                                offset_table[index + 1]
+                                if index + 1 < len(offset_table)
+                                else footer_offset
+                            )
+                            - offset
+                        ),
+                        index,
+                    )
+                )
+
+            file.seek(footer_offset)
+            self.battle_scripts_files_footers[address] = file.read()
+        finally:
+            if close_file:
+                file.close()
+
+    def load_all_battle_scripts_files(
+        self,
+        directory: pathlib.Path | str = f"data/data/{BATTLE_SCRIPTS_DIRECTORY_NAME}",
+    ) -> None:
+        if isinstance(directory, str):
+            directory = pathlib.Path(directory)
+
+        self.battle_scripts_files = {}
+        self.battle_scripts_files_footers = {}
+        for address in self.battle_offset_tables.keys():
+            self.load_battle_scripts_file(
+                address, directory / BATTLE_SCRIPTS_FILES_METADATA[address].filename
+            )
+
     def load_all(self) -> None:
         self.load_overlay12()
+        self.load_overlay14()
+        self.load_all_battle_scripts_files()
 
     def save_overlay12(
         self,
@@ -330,7 +422,94 @@ class BattleScriptManager(MnLScriptManager):
             if close_file:
                 file.close()
 
+    def save_overlay14(
+        self,
+        file: (
+            typing.BinaryIO | pathlib.Path | str
+        ) = "data/overlay.dec/overlay_0014.dec.bin",
+    ) -> None:
+        close_file = False
+        if isinstance(file, (pathlib.Path, str)):
+            file = open(file, "r+b")
+            close_file = True
+
+        try:
+            overlay14_raw = bytearray(file.read())
+
+            for address, offset_table in self.battle_offset_tables.items():
+                metadata = BATTLE_SCRIPTS_FILES_METADATA[address]
+
+                old_offset_table_length = (
+                    struct.unpack(
+                        "<I",
+                        overlay14_raw[
+                            metadata.offset_table_address : (
+                                metadata.offset_table_address + 4
+                            )
+                        ],
+                    )[0]
+                    // 4
+                    - 1
+                )
+                del overlay14_raw[
+                    metadata.offset_table_address : metadata.offset_table_address
+                    + 4
+                    + old_offset_table_length * 4
+                ]
+                overlay14_raw[
+                    metadata.offset_table_address : metadata.offset_table_address
+                ] = struct.pack("<I", (len(offset_table) + 2) * 4) + b"".join(
+                    [
+                        struct.pack("<I", x)
+                        for x in itertools.chain(
+                            offset_table,
+                            [self.battle_scripts_files_footer_offsets[address]],
+                        )
+                    ]
+                )
+
+            file.seek(0)
+            file.truncate()
+            file.write(overlay14_raw)
+        finally:
+            if close_file:
+                file.close()
+
+    def save_battle_scripts_file(
+        self, address: int, file: typing.BinaryIO | pathlib.Path | str
+    ) -> None:
+        close_file = False
+        if isinstance(file, (pathlib.Path, str)):
+            file = open(file, "wb")
+            close_file = True
+
+        try:
+            self.battle_offset_tables[address] = []
+            for script in self.battle_scripts_files[address]:
+                self.battle_offset_tables[address].append(file.tell())
+                file.write(script.to_bytes(self))
+
+            self.battle_scripts_files_footer_offsets[address] = file.tell()
+            file.write(self.battle_scripts_files_footers[address])
+        finally:
+            if close_file:
+                file.close()
+
+    def save_all_battle_scripts_files(
+        self,
+        directory: pathlib.Path | str = f"data/data/{BATTLE_SCRIPTS_DIRECTORY_NAME}",
+    ) -> None:
+        if isinstance(directory, str):
+            directory = pathlib.Path(directory)
+
+        for address in self.battle_scripts_files.keys():
+            self.save_battle_scripts_file(
+                address, directory / BATTLE_SCRIPTS_FILES_METADATA[address].filename
+            )
+
     def save_all(self) -> None:
+        self.save_all_battle_scripts_files()
+        self.save_overlay14()
         self.save_overlay12()
 
 
