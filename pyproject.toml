@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mnllib"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python library for the Mario & Luigi games."
 authors = ["Dimitar Dimitrov <dmtrdmtrov@gmail.com>"]
 license = "LGPL-3.0-or-later"
