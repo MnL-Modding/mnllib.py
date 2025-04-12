@@ -1,13 +1,18 @@
-[tool.poetry]
+[project]
 name = "mnllib"
 version = "0.2.0"
 description = "Python library for the Mario & Luigi games."
-authors = ["Dimitar Dimitrov <dmtrdmtrov@gmail.com>"]
-license = "LGPL-3.0-or-later"
+authors = [
+    {name = "Dimitar Dimitrov",email = "dmtrdmtrov@gmail.com"}
+]
+license = {text = "LGPL-3.0-or-later"}
 readme = "README.md"
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "pymsb @ git+https://github.com/MnL-Modding/pymsb.git@v1",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
+[tool.poetry]
 
 [tool.poetry.group.dev.dependencies]
 flake8-pytest-style = "^2.0.0"
@@ -16,5 +21,5 @@ pytest = "^8.3.2"
 mypy = "^1.11.2"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

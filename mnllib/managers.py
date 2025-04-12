@@ -1,32 +1,25 @@
 import abc
-import struct
 import typing
 
-from .script import CommandParameterMetadata
+from .script import CommandMetadata
 
 
 class MnLScriptManager(abc.ABC):
-    command_parameter_metadata_struct_map: list[struct.Struct]
-    command_parameter_metadata_table: list[CommandParameterMetadata]
+    command_metadata_table: list[CommandMetadata]
 
-    def __init__(
-        self, command_parameter_metadata_struct_map: list[struct.Struct]
-    ) -> None:
-        self.command_parameter_metadata_struct_map = (
-            command_parameter_metadata_struct_map
-        )
-        self.command_parameter_metadata_table = []
+    def __init__(self) -> None:
+        self.command_metadata_table = []
 
-    def load_command_parameter_metadata_table(
+    def load_command_metadata_table(
         self, stream: typing.BinaryIO, number_of_commands: int
     ) -> None:
-        self.command_parameter_metadata_table = []
+        self.command_metadata_table = []
         for _ in range(number_of_commands):
-            self.command_parameter_metadata_table.append(
-                CommandParameterMetadata.from_bytes(stream.read(16))
+            self.command_metadata_table.append(
+                CommandMetadata.from_bytes(stream.read(16))
             )
 
-    def save_command_parameter_metadata_table(
+    def save_command_metadata_table(
         self, data: bytearray, metadata_table_address: int, number_of_commands: int
     ) -> None:
         data[
@@ -34,6 +27,6 @@ class MnLScriptManager(abc.ABC):
         ] = b"".join(
             [
                 parameter_metadata.to_bytes()
-                for parameter_metadata in self.command_parameter_metadata_table
+                for parameter_metadata in self.command_metadata_table
             ]
         )

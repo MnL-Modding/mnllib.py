@@ -1,8 +1,16 @@
+import collections.abc
+
 import pytest
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module")
+def monkeymodule() -> collections.abc.Generator[pytest.MonkeyPatch]:
+    with pytest.MonkeyPatch.context() as mp:
+        yield mp
+
+
+@pytest.fixture(autouse=True, scope="module")
 def _change_test_dir(  # pyright: ignore[reportUnusedFunction]
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    request: pytest.FixtureRequest, monkeymodule: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.chdir(request.path.parent)
+    monkeymodule.chdir(request.path.parent)

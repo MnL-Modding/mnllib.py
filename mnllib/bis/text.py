@@ -1,11 +1,7 @@
-from __future__ import annotations
-
 import struct
 import io
 import typing
-
-from .managers import MnLScriptManager
-from .misc import FEventChunk
+from typing import override
 
 
 class TextTable:
@@ -22,6 +18,12 @@ class TextTable:
         self.entries = entries
         self.is_dialog = is_dialog
         self.textbox_sizes = textbox_sizes
+
+    @override
+    def __eq__(self, other: object, /) -> bool:
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        return NotImplemented
 
     @classmethod
     def from_bytes(cls, data: bytes, is_dialog: bool) -> typing.Self:
@@ -70,7 +72,7 @@ class TextTable:
         return entry_offsets_raw.getvalue() + entries_raw.getvalue()
 
 
-class LanguageTable(FEventChunk):
+class LanguageTable:
     index: int | None
     text_tables: list[TextTable | bytes | None]
 
@@ -106,7 +108,7 @@ class LanguageTable(FEventChunk):
 
         return cls(text_tables, index)
 
-    def to_bytes(self, manager: MnLScriptManager | None = None) -> bytes:
+    def to_bytes(self) -> bytes:
         text_table_offsets_raw = io.BytesIO()
         text_tables_raw = io.BytesIO()
 

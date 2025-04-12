@@ -1,65 +1,69 @@
+import os
 import pathlib
 import struct
 import itertools
 import warnings
 import typing
+from typing import override
 
+from ..consts import DEFAULT_DATA_DIR_PATH
+from ..managers import MnLScriptManager
+from ..misc import MnLLibWarning
+from ..nds.consts import fs_std_data_path, fs_std_overlay_path
+from ..utils import read_length_prefixed_array, stream_or_open_file
 from .consts import (
-    BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    BATTLE_COMMAND_METADATA_TABLE_ADDRESS,
     BATTLE_NUMBER_OF_COMMANDS,
     BATTLE_SCRIPTS_DIRECTORY_NAME,
     BATTLE_SCRIPTS_FILES_METADATA,
-    COMMAND_PARAMETER_STRUCT_MAP,
-    FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
-    FEVENT_FILE_NAME,
+    FEVENT_COMMAND_METADATA_TABLE_ADDRESS,
+    FEVENT_PATH,
     FEVENT_OFFSET_TABLE_LENGTH_ADDRESS,
     FEVENT_OFFSET_TABLE_ADDRESS,
     FEVENT_NUMBER_OF_COMMANDS,
-    MENU_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    SCRIPT_ALIGNMENT,
+    MENU_COMMAND_METADATA_TABLE_ADDRESS,
     MENU_NUMBER_OF_COMMANDS,
-    SHOP_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+    SHOP_COMMAND_METADATA_TABLE_ADDRESS,
     SHOP_NUMBER_OF_COMMANDS,
 )
-from ..managers import MnLScriptManager
-from ..misc import MnLLibWarning
-from ..utils import read_length_prefixed_array
-from .misc import FEventChunk, parse_fevent_chunk
 from .script import BattleScript, FEventScript
+from .text import LanguageTable
+
+
+type FEventChunkTriple = tuple[FEventScript, FEventScript | None, LanguageTable | None]
 
 
 class FEventScriptManager(MnLScriptManager):
     fevent_offset_table: list[tuple[int, int, int]]
-    fevent_chunks: list[
-        tuple[FEventScript | None, FEventChunk | None, FEventChunk | None]
-    ]
+    fevent_chunks: list[FEventChunkTriple]
     fevent_footer_offset: int
     fevent_footer: bytes
 
-    def __init__(self, load: bool = True) -> None:
-        super().__init__(
-            command_parameter_metadata_struct_map=COMMAND_PARAMETER_STRUCT_MAP
-        )
+    def __init__(
+        self, data_dir: str | os.PathLike[str] | None = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        super().__init__()
 
-        if load:
-            self.load_all()
+        if data_dir is not None:
+            self.load_all(data_dir)
         else:
             self.fevent_offset_table = []
             self.fevent_chunks = []
             self.fevent_footer_offset = 0
             self.fevent_footer = b""
 
+    @override
+    def __eq__(self, other: object, /) -> bool:
+        if isinstance(other, self.__class__):
+            return self.__dict__ == other.__dict__
+        return NotImplemented
+
     def load_overlay3(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0003.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(3),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "rb") as file:
             file.seek(FEVENT_OFFSET_TABLE_LENGTH_ADDRESS)
             fevent_offset_table_length = struct.unpack("<I", file.read(4))[0] // 4 - 1
             if fevent_offset_table_length % 3 != 1:
@@ -73,91 +77,72 @@ class FEventScriptManager(MnLScriptManager):
             for _ in range(fevent_offset_table_length // 3):
                 self.fevent_offset_table.append(struct.unpack("<III", file.read(4 * 3)))
             (self.fevent_footer_offset,) = struct.unpack("<I", file.read(4))
-        finally:
-            if close_file:
-                file.close()
 
     def load_overlay6(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0006.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(6),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
-
-        try:
-            file.seek(FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
-            self.load_command_parameter_metadata_table(file, FEVENT_NUMBER_OF_COMMANDS)
-        finally:
-            if close_file:
-                file.close()
+        with stream_or_open_file(file, "rb") as file:
+            file.seek(FEVENT_COMMAND_METADATA_TABLE_ADDRESS)
+            self.load_command_metadata_table(file, FEVENT_NUMBER_OF_COMMANDS)
 
     def load_fevent(
         self,
-        file: typing.BinaryIO | pathlib.Path | str = f"data/data/{FEVENT_FILE_NAME}",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_data_path(FEVENT_PATH),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "rb") as file:
             flat_fevent_offset_table = list(
                 itertools.chain.from_iterable(self.fevent_offset_table)
             )
-            index = 0
             self.fevent_chunks = []
-            for triple in self.fevent_offset_table:
-                chunk_triple: tuple[FEventChunk | None, ...] = ()
-                for offset in triple:
+            for room_id, triple in enumerate(self.fevent_offset_table):
+                data: list[bytes] = []
+                for triple_index, offset in enumerate(triple):
                     file.seek(offset)
-                    chunk_triple += (
-                        parse_fevent_chunk(
-                            self,
-                            file.read(
-                                (flat_fevent_offset_table[index + 1] - offset)
-                                if index + 1 < len(flat_fevent_offset_table)
-                                else 0
-                            ),
-                            index,
-                        ),
+                    index = room_id * 3 + triple_index
+                    data.append(
+                        file.read(
+                            (flat_fevent_offset_table[index + 1] - offset)
+                            if index + 1 < len(flat_fevent_offset_table)
+                            else 0
+                        )
                     )
                     index += 1
                 self.fevent_chunks.append(
-                    typing.cast(
-                        tuple[
-                            FEventScript | None, FEventChunk | None, FEventChunk | None
-                        ],
-                        chunk_triple,
+                    (
+                        FEventScript.from_bytes(self, data[0], index=room_id * 3),
+                        (
+                            FEventScript.from_bytes(
+                                self, data[1], index=room_id * 3 + 1
+                            )
+                            if len(data[1]) > 0
+                            else None
+                        ),
+                        (
+                            LanguageTable.from_bytes(
+                                data[2], is_dialog=True, index=room_id * 3 + 2
+                            )
+                            if len(data[2]) > 0
+                            else None
+                        ),
                     )
                 )
 
             file.seek(self.fevent_footer_offset)
             self.fevent_footer = file.read()
-        finally:
-            if close_file:
-                file.close()
 
-    def load_all(self) -> None:
-        self.load_overlay3()
-        self.load_overlay6()
-        self.load_fevent()
+    def load_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.load_overlay3(fs_std_overlay_path(3, data_dir=data_dir))
+        self.load_overlay6(fs_std_overlay_path(6, data_dir=data_dir))
+        self.load_fevent(fs_std_data_path(FEVENT_PATH, data_dir=data_dir))
 
     def save_overlay3(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0003.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(3),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "r+b")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "r+b") as file:
             overlay3_raw = bytearray(file.read())
 
             old_fevent_offset_table_length = (
@@ -192,68 +177,52 @@ class FEventScriptManager(MnLScriptManager):
             file.seek(0)
             file.truncate()
             file.write(overlay3_raw)
-        finally:
-            if close_file:
-                file.close()
 
     def save_overlay6(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0006.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(6),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "r+b")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "r+b") as file:
             overlay6_raw = bytearray(file.read())
 
-            self.save_command_parameter_metadata_table(
+            self.save_command_metadata_table(
                 overlay6_raw,
-                FEVENT_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                FEVENT_COMMAND_METADATA_TABLE_ADDRESS,
                 FEVENT_NUMBER_OF_COMMANDS,
             )
 
             file.seek(0)
             file.truncate()
             file.write(overlay6_raw)
-        finally:
-            if close_file:
-                file.close()
 
     def save_fevent(
         self,
-        file: typing.BinaryIO | pathlib.Path | str = f"data/data/{FEVENT_FILE_NAME}",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_data_path(FEVENT_PATH),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "wb")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "wb") as file:
             self.fevent_offset_table = []
             for triple in self.fevent_chunks:
                 offset_triple: tuple[int, ...] = ()
                 for chunk in triple:
                     offset_triple += (file.tell(),)
-                    if chunk is not None:
+                    if isinstance(chunk, FEventScript):
                         file.write(chunk.to_bytes(self))
+                        file.write(b"\x00" * ((-file.tell()) % SCRIPT_ALIGNMENT))
+                    elif isinstance(chunk, LanguageTable):
+                        file.write(chunk.to_bytes())
                 self.fevent_offset_table.append(
                     typing.cast(tuple[int, int, int], offset_triple)
                 )
 
             self.fevent_footer_offset = file.tell()
             file.write(self.fevent_footer)
-        finally:
-            if close_file:
-                file.close()
 
-    def save_all(self) -> None:
-        self.save_fevent()
-        self.save_overlay6()
-        self.save_overlay3()
+    def save_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.save_fevent(fs_std_data_path(FEVENT_PATH, data_dir=data_dir))
+        self.save_overlay6(fs_std_overlay_path(6, data_dir=data_dir))
+        self.save_overlay3(fs_std_overlay_path(3, data_dir=data_dir))
 
 
 class BattleScriptManager(MnLScriptManager):
@@ -262,13 +231,13 @@ class BattleScriptManager(MnLScriptManager):
     battle_scripts_files_footer_offsets: dict[int, int]
     battle_scripts_files_footers: dict[int, bytes]
 
-    def __init__(self, load: bool = True) -> None:
-        super().__init__(
-            command_parameter_metadata_struct_map=COMMAND_PARAMETER_STRUCT_MAP
-        )
+    def __init__(
+        self, data_dir: str | os.PathLike[str] | None = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        super().__init__()
 
-        if load:
-            self.load_all()
+        if data_dir is not None:
+            self.load_all(data_dir)
         else:
             self.battle_offset_tables = {}
             self.battle_scripts_files = {}
@@ -277,34 +246,17 @@ class BattleScriptManager(MnLScriptManager):
 
     def load_overlay12(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0012.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(12),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
-
-        try:
-            file.seek(BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
-            self.load_command_parameter_metadata_table(file, BATTLE_NUMBER_OF_COMMANDS)
-        finally:
-            if close_file:
-                file.close()
+        with stream_or_open_file(file, "rb") as file:
+            file.seek(BATTLE_COMMAND_METADATA_TABLE_ADDRESS)
+            self.load_command_metadata_table(file, BATTLE_NUMBER_OF_COMMANDS)
 
     def load_overlay14(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0014.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(14),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "rb") as file:
             self.battle_offset_tables = {}
             self.battle_scripts_files_footer_offsets = {}
             for address, metadata in BATTLE_SCRIPTS_FILES_METADATA.items():
@@ -315,19 +267,11 @@ class BattleScriptManager(MnLScriptManager):
                 self.battle_scripts_files_footer_offsets[address] = (
                     self.battle_offset_tables[address].pop()
                 )
-        finally:
-            if close_file:
-                file.close()
 
     def load_battle_scripts_file(
-        self, address: int, file: typing.BinaryIO | pathlib.Path | str
+        self, address: int, file: typing.BinaryIO | str | os.PathLike[str]
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "rb") as file:
             self.battle_scripts_files[address] = []
             offset_table = self.battle_offset_tables[address]
             footer_offset = self.battle_scripts_files_footer_offsets[address]
@@ -350,68 +294,54 @@ class BattleScriptManager(MnLScriptManager):
 
             file.seek(footer_offset)
             self.battle_scripts_files_footers[address] = file.read()
-        finally:
-            if close_file:
-                file.close()
 
     def load_all_battle_scripts_files(
         self,
-        directory: pathlib.Path | str = f"data/data/{BATTLE_SCRIPTS_DIRECTORY_NAME}",
+        directory: str | os.PathLike[str] = fs_std_data_path(
+            BATTLE_SCRIPTS_DIRECTORY_NAME
+        ),
     ) -> None:
-        if isinstance(directory, str):
-            directory = pathlib.Path(directory)
-
         self.battle_scripts_files = {}
         self.battle_scripts_files_footers = {}
         for address in self.battle_offset_tables.keys():
             self.load_battle_scripts_file(
-                address, directory / BATTLE_SCRIPTS_FILES_METADATA[address].filename
+                address,
+                pathlib.Path(
+                    directory, BATTLE_SCRIPTS_FILES_METADATA[address].filename
+                ),
             )
 
-    def load_all(self) -> None:
-        self.load_overlay12()
-        self.load_overlay14()
-        self.load_all_battle_scripts_files()
+    def load_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.load_overlay12(fs_std_overlay_path(12, data_dir=data_dir))
+        self.load_overlay14(fs_std_overlay_path(14, data_dir=data_dir))
+        self.load_all_battle_scripts_files(
+            fs_std_data_path(BATTLE_SCRIPTS_DIRECTORY_NAME, data_dir=data_dir)
+        )
 
     def save_overlay12(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0012.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(12),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "r+b")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "r+b") as file:
             overlay12_raw = bytearray(file.read())
 
-            self.save_command_parameter_metadata_table(
+            self.save_command_metadata_table(
                 overlay12_raw,
-                BATTLE_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                BATTLE_COMMAND_METADATA_TABLE_ADDRESS,
                 BATTLE_NUMBER_OF_COMMANDS,
             )
 
             file.seek(0)
             file.truncate()
             file.write(overlay12_raw)
-        finally:
-            if close_file:
-                file.close()
 
     def save_overlay14(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0014.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(14),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "r+b")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "r+b") as file:
             overlay14_raw = bytearray(file.read())
 
             for address, offset_table in self.battle_offset_tables.items():
@@ -449,163 +379,129 @@ class BattleScriptManager(MnLScriptManager):
             file.seek(0)
             file.truncate()
             file.write(overlay14_raw)
-        finally:
-            if close_file:
-                file.close()
 
     def save_battle_scripts_file(
-        self, address: int, file: typing.BinaryIO | pathlib.Path | str
+        self, address: int, file: typing.BinaryIO | str | os.PathLike[str]
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "wb")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "wb") as file:
             self.battle_offset_tables[address] = []
             for script in self.battle_scripts_files[address]:
                 self.battle_offset_tables[address].append(file.tell())
                 file.write(script.to_bytes(self))
+                file.write(b"\x00" * ((-file.tell()) % SCRIPT_ALIGNMENT))
 
             self.battle_scripts_files_footer_offsets[address] = file.tell()
             file.write(self.battle_scripts_files_footers[address])
-        finally:
-            if close_file:
-                file.close()
 
     def save_all_battle_scripts_files(
         self,
-        directory: pathlib.Path | str = f"data/data/{BATTLE_SCRIPTS_DIRECTORY_NAME}",
+        directory: str | os.PathLike[str] = fs_std_data_path(
+            BATTLE_SCRIPTS_DIRECTORY_NAME
+        ),
     ) -> None:
-        if isinstance(directory, str):
-            directory = pathlib.Path(directory)
-
         for address in self.battle_scripts_files.keys():
             self.save_battle_scripts_file(
-                address, directory / BATTLE_SCRIPTS_FILES_METADATA[address].filename
+                address,
+                pathlib.Path(
+                    directory, BATTLE_SCRIPTS_FILES_METADATA[address].filename
+                ),
             )
 
-    def save_all(self) -> None:
-        self.save_all_battle_scripts_files()
-        self.save_overlay14()
-        self.save_overlay12()
+    def save_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.save_all_battle_scripts_files(
+            fs_std_data_path(BATTLE_SCRIPTS_DIRECTORY_NAME, data_dir=data_dir)
+        )
+        self.save_overlay14(fs_std_overlay_path(14, data_dir=data_dir))
+        self.save_overlay12(fs_std_overlay_path(12, data_dir=data_dir))
 
 
 class MenuScriptManager(MnLScriptManager):
-    def __init__(self, load: bool = True) -> None:
-        super().__init__(
-            command_parameter_metadata_struct_map=COMMAND_PARAMETER_STRUCT_MAP
-        )
-        if load:
-            self.load_all()
+    def __init__(
+        self, data_dir: str | os.PathLike[str] | None = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        super().__init__()
+
+        if data_dir is not None:
+            self.load_all(data_dir)
 
     def load_overlay123(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0123.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(123),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
+        with stream_or_open_file(file, "rb") as file:
+            file.seek(MENU_COMMAND_METADATA_TABLE_ADDRESS)
+            self.load_command_metadata_table(file, MENU_NUMBER_OF_COMMANDS)
 
-        try:
-            file.seek(MENU_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
-            self.load_command_parameter_metadata_table(file, MENU_NUMBER_OF_COMMANDS)
-        finally:
-            if close_file:
-                file.close()
-
-    def load_all(self) -> None:
-        self.load_overlay123()
+    def load_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.load_overlay123(fs_std_overlay_path(123, data_dir=data_dir))
 
     def save_overlay123(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0123.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(123),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "r+b")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "r+b") as file:
             overlay123_raw = bytearray(file.read())
 
-            self.save_command_parameter_metadata_table(
+            self.save_command_metadata_table(
                 overlay123_raw,
-                MENU_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                MENU_COMMAND_METADATA_TABLE_ADDRESS,
                 MENU_NUMBER_OF_COMMANDS,
             )
 
             file.seek(0)
             file.truncate()
             file.write(overlay123_raw)
-        finally:
-            if close_file:
-                file.close()
 
-    def save_all(self) -> None:
-        self.save_overlay123()
+    def save_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.save_overlay123(fs_std_overlay_path(123, data_dir=data_dir))
 
 
 class ShopScriptManager(MnLScriptManager):
-    def __init__(self, load: bool = True) -> None:
-        super().__init__(
-            command_parameter_metadata_struct_map=COMMAND_PARAMETER_STRUCT_MAP
-        )
-        if load:
-            self.load_all()
+    def __init__(
+        self, data_dir: str | os.PathLike[str] | None = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        super().__init__()
+
+        if data_dir is not None:
+            self.load_all(data_dir)
 
     def load_overlay124(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0124.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(124),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "rb")
-            close_file = True
+        with stream_or_open_file(file, "rb") as file:
+            file.seek(SHOP_COMMAND_METADATA_TABLE_ADDRESS)
+            self.load_command_metadata_table(file, SHOP_NUMBER_OF_COMMANDS)
 
-        try:
-            file.seek(SHOP_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS)
-            self.load_command_parameter_metadata_table(file, SHOP_NUMBER_OF_COMMANDS)
-        finally:
-            if close_file:
-                file.close()
-
-    def load_all(self) -> None:
-        self.load_overlay124()
+    def load_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.load_overlay124(fs_std_overlay_path(124, data_dir=data_dir))
 
     def save_overlay124(
         self,
-        file: (
-            typing.BinaryIO | pathlib.Path | str
-        ) = "data/overlay.dec/overlay_0124.dec.bin",
+        file: typing.BinaryIO | str | os.PathLike[str] = fs_std_overlay_path(124),
     ) -> None:
-        close_file = False
-        if isinstance(file, (pathlib.Path, str)):
-            file = open(file, "r+b")
-            close_file = True
-
-        try:
+        with stream_or_open_file(file, "r+b") as file:
             overlay124_raw = bytearray(file.read())
 
-            self.save_command_parameter_metadata_table(
+            self.save_command_metadata_table(
                 overlay124_raw,
-                SHOP_COMMAND_PARAMETER_METADATA_TABLE_ADDRESS,
+                SHOP_COMMAND_METADATA_TABLE_ADDRESS,
                 SHOP_NUMBER_OF_COMMANDS,
             )
 
             file.seek(0)
             file.truncate()
             file.write(overlay124_raw)
-        finally:
-            if close_file:
-                file.close()
 
-    def save_all(self) -> None:
-        self.save_overlay124()
+    def save_all(
+        self, data_dir: str | os.PathLike[str] = DEFAULT_DATA_DIR_PATH
+    ) -> None:
+        self.save_overlay124(fs_std_overlay_path(124, data_dir=data_dir))
