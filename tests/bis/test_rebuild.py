@@ -63,7 +63,6 @@ def shop_data() -> tuple[bytes, mnllib.bis.ShopScriptManager]:
             pathlib.Path(SCRIPT_DIR, x)
             for x in [
                 mnllib.nds.fs_std_data_path("BAI/BMes_cf.dat"),
-                mnllib.nds.fs_std_data_path("BAI/BMes_cf.dat"),
                 mnllib.nds.fs_std_data_path("BAI/BMes_ji.dat"),
                 mnllib.nds.fs_std_data_path("BAI/BMes_yo.dat"),
                 mnllib.nds.fs_std_data_path("MAI/MMes_yo.dat"),
