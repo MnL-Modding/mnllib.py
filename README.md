@@ -1,1 +1,2 @@
-# `mnllib.py` — Python library for the Mario & Luigi games
+# `mnllib.py`
+Python library for the Mario & Luigi games.
