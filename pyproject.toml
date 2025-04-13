@@ -9,8 +9,11 @@ license = {text = "LGPL-3.0-or-later"}
 readme = "README.md"
 requires-python = ">=3.12,<4.0"
 dependencies = [
-    "pymsb @ git+https://github.com/MnL-Modding/pymsb.git@v1",
+    "pymsbmnl",
 ]
+
+[project.urls]
+repository = "https://github.com/MnL-Modding/mnllib.py"
 
 [tool.poetry]
 

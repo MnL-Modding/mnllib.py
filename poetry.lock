@@ -199,20 +199,16 @@ files = [
 ]
 
 [[package]]
-name = "pymsb"
-version = "1.0.1"
-description = "Python library for Nintendo's MSBT and MSBF formats"
+name = "pymsbmnl"
+version = "1.1.0"
+description = "Python library for Nintendo's MSBT & MSBF formats (Mario & Luigi Modding fork)."
 optional = false
-python-versions = ">=3.10"
+python-versions = "<4.0,>=3.10"
 groups = ["main"]
-files = []
-develop = false
-
-[package.source]
-type = "git"
-url = "https://github.com/MnL-Modding/pymsb.git"
-reference = "v1"
-resolved_reference = "d135138bc892679102b9eac2e06816265d6f36ed"
+files = [
+    {file = "pymsbmnl-1.1.0-py3-none-any.whl", hash = "sha256:15806adf1214131e0ca6d0d8b2e214a0425885a977e124dcb51256831ceed012"},
+    {file = "pymsbmnl-1.1.0.tar.gz", hash = "sha256:04492e663b820b6ea12d920b4948a8a0f39deafb65e6ee257b9feb6893894795"},
+]
 
 [[package]]
 name = "pytest"
@@ -250,4 +246,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "d350552f888e21402ed534bc53f562068c6a078c2595e5d47c2c0ca9a2366254"
+content-hash = "6783355b1255b221694e773f34f76657431d26e0483b851a8074d473c0de6298"

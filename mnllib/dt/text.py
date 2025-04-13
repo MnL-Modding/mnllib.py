@@ -5,7 +5,7 @@ import struct
 import typing
 from typing import override
 
-import pymsb
+import pymsbmnl
 
 from .consts import (
     DEFAULT_MESSAGE_ATTRIBUTES,
@@ -19,7 +19,7 @@ from .consts import (
 )
 
 
-class DTLMSAdapter(pymsb.LMSAdapter):
+class DTLMSAdapter(pymsbmnl.LMSAdapter):
     language: str
 
     def __init__(self, language: str) -> None:
@@ -31,11 +31,11 @@ class DTLMSAdapter(pymsb.LMSAdapter):
 
     @property
     @override
-    def section_order(self) -> list[pymsb.SectionName]:
+    def section_order(self) -> list[pymsbmnl.SectionName]:
         return ["TXT2", "TSY1", "ATR1"]
 
     @override
-    def padding_byte(self, section_name: pymsb.SectionName) -> int | None:
+    def padding_byte(self, section_name: pymsbmnl.SectionName) -> int | None:
         return 0x00 if section_name != "ATR1" else 0xAB
 
     @property
@@ -44,7 +44,7 @@ class DTLMSAdapter(pymsb.LMSAdapter):
         return message_header_padding(self.language)
 
     @override
-    def read_char(self, stream: pymsb.BinaryMemoryIO) -> str:
+    def read_char(self, stream: pymsbmnl.BinaryMemoryIO) -> str:
         char = super().read_char(stream)
 
         try:
@@ -53,7 +53,7 @@ class DTLMSAdapter(pymsb.LMSAdapter):
             return char
 
     @override
-    def read_tag(self, stream: pymsb.BinaryMemoryIO) -> str:
+    def read_tag(self, stream: pymsbmnl.BinaryMemoryIO) -> str:
         group_id = stream.read_u16()
         tag_id = stream.read_u16()
         args_size = stream.read_u16()
@@ -125,7 +125,7 @@ class DTLMSAdapter(pymsb.LMSAdapter):
                 }]"
 
     @override
-    def read_closing_tag(self, stream: pymsb.BinaryMemoryIO) -> str:
+    def read_closing_tag(self, stream: pymsbmnl.BinaryMemoryIO) -> str:
         group_id = stream.read_u16()
         tag_id = stream.read_u16()
 
@@ -134,7 +134,7 @@ class DTLMSAdapter(pymsb.LMSAdapter):
                 return f"[/{group_id:04X}:{tag_id:04X}]"
 
     @override
-    def write_tag(self, stream: pymsb.BinaryMemoryIO, tag: str) -> None:
+    def write_tag(self, stream: pymsbmnl.BinaryMemoryIO, tag: str) -> None:
         if tag.startswith("/"):
             inner_tag = tag[1:]
             self.write_chars(stream, "\u000f")
@@ -318,13 +318,13 @@ class DTLMSAdapter(pymsb.LMSAdapter):
 
     @override
     def parse_attributes(
-        self, stream: pymsb.BinaryMemoryIO, root_offset: int, root_size: int
+        self, stream: pymsbmnl.BinaryMemoryIO, root_offset: int, root_size: int
     ) -> dict[str, typing.Any]:
         return {"width": stream.read_u16(), "height": stream.read_u8()}
 
     @override
     def write_attributes(
-        self, stream: pymsb.BinaryMemoryIO, attributes: dict[str, typing.Any]
+        self, stream: pymsbmnl.BinaryMemoryIO, attributes: dict[str, typing.Any]
     ) -> None:
         stream.write_u16(attributes.get("width", MESSAGE_WIDTH_AUTO))
         stream.write_u8(attributes.get("height", MESSAGE_HEIGHT_AUTO))
@@ -339,16 +339,16 @@ class DTLMSAdapter(pymsb.LMSAdapter):
         return DEFAULT_MESSAGE_STYLE
 
 
-def read_msbt_chunk(language: str, chunk: bytes) -> pymsb.LMSDocument:
+def read_msbt_chunk(language: str, chunk: bytes) -> pymsbmnl.LMSDocument:
     if len(chunk) > 0:
-        return pymsb.msbt_from_buffer(lambda: DTLMSAdapter(language), chunk)
+        return pymsbmnl.msbt_from_buffer(lambda: DTLMSAdapter(language), chunk)
     else:
-        return pymsb.LMSDocument(lambda: DTLMSAdapter(language))
+        return pymsbmnl.LMSDocument(lambda: DTLMSAdapter(language))
 
 
 def read_msbt_archive(
     archive: typing.BinaryIO, offset_table: typing.BinaryIO, language: str
-) -> list[pymsb.LMSDocument]:
+) -> list[pymsbmnl.LMSDocument]:
     offset_table.seek(8, os.SEEK_CUR)
     offset_table_length = struct.unpack("<I", offset_table.read(4))[0] // 8 - 2
     offset_table.seek(4, os.SEEK_CUR)
@@ -362,7 +362,7 @@ def read_msbt_archive(
         return pool.map(functools.partial(read_msbt_chunk, language), chunks)
 
 
-def serialize_msbt_chunk(chunk: pymsb.LMSDocument) -> bytes:
+def serialize_msbt_chunk(chunk: pymsbmnl.LMSDocument) -> bytes:
     if len(chunk.messages) > 0:
         data = chunk.makebin().rstrip(b"\xab")
         data += message_footer_padding(
@@ -374,7 +374,7 @@ def serialize_msbt_chunk(chunk: pymsb.LMSDocument) -> bytes:
 
 
 def write_msbt_archive(
-    chunks: list[pymsb.LMSDocument],
+    chunks: list[pymsbmnl.LMSDocument],
     archive: typing.BinaryIO,
     offset_table: typing.BinaryIO,
     *,
