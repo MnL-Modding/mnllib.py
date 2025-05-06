@@ -1,9 +1,17 @@
+from __future__ import annotations
+
 import enum
 import types
+import typing
 import warnings
 
 from ..misc import MnLLibWarning
-from .misc import DTVersionPair
+
+if typing.TYPE_CHECKING:
+    from .misc import DTVersionPair
+
+
+NUMBER_OF_ENEMIES = 182
 
 
 SCRIPT_ALIGNMENT = 4
@@ -28,6 +36,16 @@ FEVENT_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
     ("J", "1.0"): 0x57AC94,
     ("J", "1.1"): 0x57AC94,
     ("K", "1.0"): 0x57B03C,
+}
+
+ENEMY_STATS_ADDRESS: dict[DTVersionPair, int] = {
+    ("E", "1.0"): 0x54BBD8,
+    ("E", "1.1"): 0x54BBD8,
+    ("P", "1.0"): 0x54CBD8,
+    ("P", "1.1"): 0x54BBD8,
+    ("J", "1.0"): 0x54B9A0,
+    ("J", "1.1"): 0x54B9A0,
+    ("K", "1.0"): 0x54BBD8,
 }
 
 FMES_NUMBER_OF_CHUNKS = 0x317
