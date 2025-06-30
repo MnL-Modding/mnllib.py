@@ -6,10 +6,13 @@ import typing
 import warnings
 
 from ..misc import MnLLibWarning
+from ..utils import VariableRangeEnum
 
 if typing.TYPE_CHECKING:
     from .misc import DTVersionPair
 
+
+NUMBER_OF_ROOMS = 0x02B0
 
 NUMBER_OF_ENEMIES = 182
 
@@ -38,6 +41,16 @@ FEVENT_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
     ("K", "1.0"): 0x57B03C,
 }
 
+FMAPDAT_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
+    ("E", "1.0"): 0x584CCC,
+    ("E", "1.1"): 0x584CCC,
+    ("P", "1.0"): 0x585D44,
+    ("P", "1.1"): 0x584D44,
+    ("J", "1.0"): 0x584A7C,
+    ("J", "1.1"): 0x584A7C,
+    ("K", "1.0"): 0x584E04,
+}
+
 ENEMY_STATS_ADDRESS: dict[DTVersionPair, int] = {
     ("E", "1.0"): 0x54BBD8,
     ("E", "1.1"): 0x54BBD8,
@@ -51,7 +64,18 @@ ENEMY_STATS_ADDRESS: dict[DTVersionPair, int] = {
 FMES_NUMBER_OF_CHUNKS = 0x317
 
 MESSAGE_DIR_PATH = "Message"
+FMAPDAT_PATH = "FMap/FMapDat.dat"
 SOUND_DATA_PATH = "Sound/SoundData.arc"
+
+
+class VariableType(VariableRangeEnum):
+    LOCAL = 0x3000  # TODO
+    TEXT_SYSTEM = 0x6000
+    SPECIAL = range(0x7000, 0x9000)
+    TREASURE = range(0xC000, 0xC400)  # TODO
+    ENEMY = range(0xC400, 0xC700)  # TODO
+    STORY = range(0xC700, 0xE000)
+    IMPORTANT_FLAG = 0xE000
 
 
 def message_header_padding(language: str) -> bytes:
