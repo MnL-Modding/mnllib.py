@@ -41,7 +41,7 @@ FEVENT_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
     ("K", "1.0"): 0x57B03C,
 }
 
-FMAPDAT_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
+FMAPDAT_REAL_WORLD_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
     ("E", "1.0"): 0x584CCC,
     ("E", "1.1"): 0x584CCC,
     ("P", "1.0"): 0x585D44,
@@ -50,6 +50,21 @@ FMAPDAT_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
     ("J", "1.1"): 0x584A7C,
     ("K", "1.0"): 0x584E04,
 }
+FMAPDAT_DREAM_WORLD_OFFSET_TABLE_LENGTH_ADDRESS: dict[DTVersionPair, int] = {
+    ("E", "1.0"): 0x592224,
+    ("E", "1.1"): 0x592224,
+    ("P", "1.0"): 0x59329C,
+    ("P", "1.1"): 0x59229C,
+    ("J", "1.0"): 0x5920DC,
+    ("J", "1.1"): 0x5920DC,
+    ("K", "1.0"): 0x59240C,
+}
+#: .. deprecated:: 0.2.3
+#:    Use :py:const:`FMAPDAT_REAL_WORLD_OFFSET_TABLE_LENGTH_ADDRESS` or
+#:    :py:const:`FMAPDAT_DREAM_WORLD_OFFSET_TABLE_LENGTH_ADDRESS` depending on
+#:    your needs. This constant is now an alias to
+#:    :py:const:`FMAPDAT_REAL_WORLD_OFFSET_TABLE_LENGTH_ADDRESS`.
+FMAPDAT_OFFSET_TABLE_LENGTH_ADDRESS = FMAPDAT_REAL_WORLD_OFFSET_TABLE_LENGTH_ADDRESS
 
 ENEMY_STATS_ADDRESS: dict[DTVersionPair, int] = {
     ("E", "1.0"): 0x54BBD8,
